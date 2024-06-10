@@ -3,5 +3,9 @@ uuid = "0c4a77e8-068d-4055-9a7e-2c98ca11fac7"
 authors = ["Veronika Dimitrova <veronika.dimitrova@campus.tu-berlin.de>", "Johann-Ludwig Herzog <herzog.2@campus.tu-berlin.de>", "Phi Long Mikesch <mikesch@campus.tu-berlin.de>", "Yang Felix Wang <yang.f.wang@campus.tu-berlin.de>"]
 version = "1.0.0-DEV"
 
+[deps]
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+StringEncodings = "69024149-9ee7-55f6-a4c4-859efe599b68"
+
 [compat]
 julia = "1.10"
