@@ -15,7 +15,7 @@ Tokenizer struct that represents a text tokenizer.
 `Tokenizer(text::String)`: Constructs a new `Tokenizer` object.
 
 # Examples
-```julia
+
 text = "hello"
 tokenizer = Tokenizer(text)
 
