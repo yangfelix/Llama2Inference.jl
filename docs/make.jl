@@ -1,3 +1,4 @@
+push!(LOAD_PATH,"../src/")
 using Llama2Inference
 using Documenter
 

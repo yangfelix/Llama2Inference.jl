@@ -1,12 +1,28 @@
 using DataStructures
 
-struct Token
-    str::Char
-    id::Int
-end
+"""
+    struct Tokenizer
+
+Tokenizer struct that represents a text tokenizer.
+
+# Fields
+- `text::String`: The input text that will be used for training.
+- `vocab_bytes::Vector{UInt8}`: Byte representation of the provided text.
+- `vocab_ids::Vector{Int}`: IDs corresponding to the text bytes.
+- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping the IDs from 0 to 255 to bytes.
+
+# Constructor
+`Tokenizer(text::String)`: Constructs a new `Tokenizer` object.
+
+# Examples
+
+text = "hello"
+tokenizer = Tokenizer(text)
+
+"""
 
 struct Tokenizer
-    text::String
+    text::String  # our vocabulary
     vocab_bytes::Vector{UInt8}
     vocab_ids::Vector{Int}
     vocab::OrderedDict{Int, Vector{UInt8}}
@@ -27,12 +43,29 @@ struct Tokenizer
 end
 
 
+"""
+    count_consecutive(vocab_ids::Vector{Int})
+
+Count consecutive pairs of vocabulary IDs in the training data.
+
+# Arguments
+- `vocab_ids::Vector{Int}`: Vector of the trainings text's vocabulary IDs.
+
+# Returns
+- pair_dict::Dict: Dictionary containing number of occurrences of each consecutive pairs.
+
+# Example 
+text = "hello"
+tokenizer = Tokenizer(text)
+pair_dict = count_consecutive(tokenizer.vocab_ids)
+"""
+
 # function that counts most common consecutive pairs
 
 function count_consecutive(vocab_ids::Vector{Int})
     pair_dict = Dict{Tuple{Int, Int}, Int}()
     
-    # iterate through the ids, excluding the last id and get number of occurrences of all consecutive pairs
+    # iterate over the ids, excluding the last id and get number of occurrences of all consecutive pairs
     for i in 1:length(vocab_ids)-1
         id1 = vocab_ids[i]
         id2 = vocab_ids[i+1]
@@ -48,6 +81,27 @@ function count_consecutive(vocab_ids::Vector{Int})
     return pair_dict
 end
 
+"""
+    get_most_common_pair(vocab_ids::Vector{Int})
+
+Get the most common consecutive pair of vocabulary IDs in the training data.
+
+# Arguments
+- `vocab_ids::Vector{Int}`: Vector of the trainings text's vocabulary IDs.
+
+# Returns
+- `top_pair::Tuple{Int, Int}, max_count::Int`: Tuple containing the most common pair and its count.
+
+# Calls 
+- `count_consecutive` : Gets the dictionary containing number of occurrences of each consecutive pairs.
+
+# Examples
+
+text = "hello"
+tokenizer = Tokenizer(text)
+top_pair, max_count = get_most_common_pair(tokenizer.vocab_ids)
+
+"""
 function get_most_common_pair(vocab_ids::Vector{Int})
     pair_dict = count_consecutive(vocab_ids)
     top_pair = nothing
@@ -63,6 +117,24 @@ function get_most_common_pair(vocab_ids::Vector{Int})
     return top_pair,max_count
 end
 
+"""
+    replace_top_pair!(vocab_ids::Vector{Int}, vocab::OrderedDict{Int, Vector{UInt8}})
+
+Replaces the 20 most common consecutive pairs with a new vocabulary ID.
+
+# Arguments
+- `vocab_ids::Vector{Int}`: Vector of the trainings text's vocabulary IDs.
+- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping IDs to vocabulary bytes.
+
+# Calls 
+- `get_most_common_pair` : Gets the most common pair.
+
+# Examples
+text = "hello"
+tokenizer = Tokenizer(text)
+replace_top_pair!(tokenizer.vocab_ids, tokenizer.vocab)
+
+"""
 function replace_top_pair!(vocab_ids::Vector{Int}, vocab::OrderedDict{Int, Vector{UInt8}})
     desired_vocab_size = 276
     num_merges = desired_vocab_size - 256
@@ -99,6 +171,24 @@ function replace_top_pair!(vocab_ids::Vector{Int}, vocab::OrderedDict{Int, Vecto
 
 end
 
+"""
+    decoding(ids::Vector{Int}, vocab::OrderedDict{Int, Vector{UInt8}})
+
+Decode a sequence of vocabulary IDs into text.
+
+# Arguments
+- `ids::Vector{Int}`: Vector of text IDs.
+- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping IDs to vocabulary bytes.
+
+# Returns
+- `text::String`: Decoded text.
+
+# Examples
+text = "hello"
+tokenizer = Tokenizer(text)
+ids = [104, 105]
+decoded_text = decoding(ids, tokenizer.vocab)
+"""
 # ids to text, vocab is the new vocab where the consecutive pairs are alreay merged
 function decoding(ids::Vector{Int},vocab::OrderedDict{Int, Vector{UInt8}})
     # simple example for me:
@@ -116,6 +206,29 @@ function decoding(ids::Vector{Int},vocab::OrderedDict{Int, Vector{UInt8}})
     return String(text_bytes)
 end
 
+"""
+    encoding(str_text::String, vocab::OrderedDict{Int, Vector{UInt8}})
+
+Encode text into a sequence of vocabulary IDs.
+
+# Arguments
+- `str_text::String`: Input text.
+- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping IDs to vocabulary bytes.
+
+# Returns
+- `ids::Vector{Int}`: Encoded vocabulary IDs.
+
+# Examples
+1.
+text = "this is a this test text with some repeated text  with some with some text"
+tokenizer = Tokenizer(text)
+replace_top_pair!(tokenizer.vocab_ids,tokenizer.vocab)
+str_text = "this"  
+ids = encoding(str_text,tokenizer.vocab)
+
+2.
+decoding(encoding("hello",tokenizer.vocab),tokenizer.vocab) == "hello"
+"""
 # text to ids, vocab is the new vocab where the consecutive pairs are alreay merged
 function encoding(str_text::String, vocab::OrderedDict{Int, Vector{UInt8}})
     text_bytes = encode(str_text, "utf-8")  # convert text to unicode  

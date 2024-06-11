@@ -58,6 +58,12 @@ end
     # Check if the actual output matches the expected output
     @test actual_output == expected_output
 
+    text = "hello"
+    tokenizer = Tokenizer(text)
+    ids = [104, 105]
+    decoded_text = decoding(ids, tokenizer.vocab)
+    @test decoded_text == expected_output
+
 end
 
 
