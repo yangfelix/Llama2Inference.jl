@@ -15,7 +15,8 @@ include("transformer.jl")
 
 
 export Tokenizer
-export read_checkpoint, TransformerWeights
+export read_checkpoint, TransformerWeights, Transformer
+export Config, set_config_vocab_size, read_config
 export replace_top_pair!, Tokenizer, get_most_common_pair, count_consecutive, decoding, encoding
 
 end

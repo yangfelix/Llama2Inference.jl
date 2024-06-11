@@ -8,7 +8,7 @@ struct Config{T<:Integer}
     seq_len::T
 end
 
-function read_config(T::Type{<:Integer}, file::IOStream)
+function read_config(T::Type{<:Integer}, file::IO)
     num_bytes = sizeof(Config{T})
     buffer = Vector{UInt8}(undef, num_bytes)
     read!(file, buffer)
