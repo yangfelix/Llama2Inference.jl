@@ -77,8 +77,3 @@ function get_weights(weights::Vector, offset_1, offset_2, dims)::AbstractArray
     w = @view weights[begin+offset_1:begin+offset_2-1]
     return reshape(w, dims)
 end
-
-function print_first_last_10(arr::AbstractArray)
-    println(arr[begin:begin+9])
-    println(arr[end-9:end])
-end
