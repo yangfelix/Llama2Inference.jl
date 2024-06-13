@@ -20,53 +20,6 @@ export Config, set_config_vocab_size, read_config
 export TransformerWeights, get_weights, memory_map_weights
 export replace_top_pair!, Tokenizer, get_most_common_pair, count_consecutive, decoding, encoding
 
-struct Config
-    dim::Int
-    hidden_dim::Int
-    n_layers::Int
-    n_heads::Int
-    n_kv_heads::Int
-    vocab_size::Int
-    seq_len::Int
-end
-
-struct TransformerWeights
-    token_embedding_table::Matrix{Float64}
-    rms_att_weight::Matrix{Float64}
-    rms_ffn_weight::Matrix{Float64}
-    wq::Array{Float64,3}
-    wk::Array{Float64,3}
-    wv::Array{Float64,3}
-    wo::Array{Float64,3}
-    w1::Array{Float64,3}
-    w2::Array{Float64,3}
-    w3::Array{Float64,3}
-    rms_final_weight::Vector{Float64}
-    freq_cis_real::Matrix{Float64}
-    freq_cis_imag::Matrix{Float64}
-end
-
-struct RunState
-    x::Vector{Float32}
-    xb::Vector{Float32}
-    xb2::Vector{Float32}
-    hb::Vector{Float32}
-    hb2::Vector{Float32}
-    q::Vector{Float32}
-    k::Vector{Float32}
-    v::Vector{Float32}
-    att::Vector{Float32}
-    logits::Vector{Float32}
-    key_cache::Array{Float32,3}
-    value_cache::Array{Float32,3}
-end
-
-struct Transformer
-    config::Config
-    weights::TransformerWeights
-    state::RunState
-end
-
 function forward(transformer::Transformer, token::Int64, pos::Int64)
     # some convenience variables
     config = transformer.config
