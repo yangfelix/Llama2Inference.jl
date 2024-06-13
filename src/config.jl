@@ -1,11 +1,11 @@
 struct Config{T<:Integer}
-    dim::T
-    hidden_dim::T
-    n_layers::T
-    n_heads::T
-    n_kv_heads::T
-    vocab_size::T
-    seq_len::T
+    dim::T          # transformer dimension
+    hidden_dim::T   # for ffn layers
+    n_layers::T     # number of layers
+    n_heads::T      # number of query heads
+    n_kv_heads::T   # number of key/value heads (can be < query heads because of multiquery)
+    vocab_size::T   # vocabulary size, usually 256 (byte-level)
+    seq_len::T      # max sequence length
 end
 
 function read_config(T::Type{<:Integer}, file::IO)
