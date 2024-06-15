@@ -3,11 +3,16 @@ struct TransformerWeights{T<:AbstractFloat}
     token_embedding_table::AbstractArray{T,2} # (vocab_size, dim)
     # weights for rmsnorms att
     rms_att_weight::AbstractArray{T,2} # (layer, dim) 
-    # weights for matmuls. note dim == n_heads * head_size
-    wq::AbstractArray{T,3} # (layer, dim, n_heads * head_size)
-    wk::AbstractArray{T,3} # (layer, dim, n_kv_heads * head_size)
-    wv::AbstractArray{T,3} # (layer, dim, n_kv_heads * head_size)
-    wo::AbstractArray{T,3} # (layer, n_heads * head_size, dim)
+    # weights for matmuls.
+    # Note:
+    #   dim == n_heads * head_size
+    #   kv_dim == n_kv_heads * head_size
+    wq::AbstractArray{T,3} # (layer, dim, dim)
+    # corresponding to matmul function call in line 146,
+    # the dimensionality in the comment of run.c is wrong, the last 2 dimensions got swapped
+    wk::AbstractArray{T,3} # (layer, kv_dim, dim) 
+    wv::AbstractArray{T,3} # (layer, kv_dim, dim)
+    wo::AbstractArray{T,3} # (layer, dim, dim)
     # weights for rmsnorms ffn
     rms_ffn_weight::AbstractArray{T,2} # (layer, dim)
     # weights for ffn
@@ -52,8 +57,8 @@ function memory_map_weights(
         (config.vocab_size, config.dim), # token_embedding_table
         (n_layers, config.dim), # rms_att_weight
         (n_layers, config.dim, config.n_heads * head_size), # wq
-        (n_layers, config.dim, config.n_kv_heads * head_size), # wk
-        (n_layers, config.dim, config.n_kv_heads * head_size), # wv
+        (n_layers, config.n_kv_heads * head_size, config.dim), # wk
+        (n_layers, config.n_kv_heads * head_size, config.dim), # wv
         (n_layers, config.n_heads * head_size, config.dim), # wo
         (n_layers, config.dim), # rms_ffn_weight
         (n_layers, config.hidden_dim, config.dim), # w1
