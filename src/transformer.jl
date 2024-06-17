@@ -21,32 +21,167 @@ function read_checkpoint(checkpoint::String)::Tuple{Config,TransformerWeights}#,
     return config, transformer_weights
 end
 
-function forward(transformer::Transformer, token::Int64, pos::Int64)
+"""
+    rmsnorm!(out::Array{T, 1}, x::Array{T,1}, weight::Array{T,1}) where T<:AbstractFloat
+
+normalize `out` in place by the root mean square of `x` and multiply by the learned weights `weight`.
+"""
+function rmsnorm!(out::AbstractArray{T, 1}, x::AbstractArray{T,1}, weight::AbstractArray{T,1}) where T<:AbstractFloat
+    (size(out) == size(x) == size(weight)) || throw(DimensionMismatch("size(out) != size(x) != size(weight), $(size(out)) != $(size(x)) != $(size(weight))."))
+    # calculate 1 / (the root mean square of the input)
+    rms = 1.0f0 / sqrt( (sum(x.^2) / length(x)) + 1e-8) # add 1e-8 for numerical stability
+    # multiply by the learned weight and normalize by 
+    @. out = weight * x * rms
+end
+
+"""
+    softmax!(x::T{T2,1}) where {T<:AbstractArray, T2<:AbstractFloat}
+
+softmax the values in `x` in place, up to position `pos` inclusively.
+"""
+function softmax!(x::AbstractArray{T2,1}) where T2<:AbstractFloat
+    # subtract the maximum value for numerical stability
+    x .-= maximum(x)
+    # exponentiate the values
+    x .= exp.(x)
+    # normalize the values
+    x ./= sum(x)
+end
+
+"""
+    forward(transformer::Transformer, token::Int, pos::Int)
+
+forward the transformer model with the input `token` at position `pos`.
+
+LlaMa2 was used as the architecure of the transformer model and it's modifications.
+The forward pass looks like the following:
+  1) forward through all layers
+    a) RMSNorm
+    b) linear project x into Query, Key, Value with Wq, Wk, Wv
+    c) RoPE relative positional encoding
+    d) multihead attention
+    e) residual of x + RMSNorm
+    f) MLP with SwiGLU non-linearity
+  2) rmsnrom
+  3) classify into logits
+"""
+function forward(transformer::Transformer, token::Int, pos::Int)
     # some convenience variables
     config = transformer.config
     weights = transformer.weights
     state = transformer.state
-    # line 72 overwrites x before using it
-    # x = state.x
     dim = config.dim
-    kv_dim = (config.dim * config.n_kv_heads) / config.n_heads
-    kv_mul = config.n_heads / config.n_kv_heads # integer multiplier of the kv sharing in multiquery
+    # integer multiplier of the kv sharing in (multiquery ?) GQA was used in LlaMa2 ...
+    # kv_mul = config.n_heads / config.n_kv_heads
+    group_size = config.n_heads / config.n_kv_heads
     hidden_dim = config.hidden_dim
     head_size = dim / config.n_heads
+    kv_dim =  head_size * config.n_kv_heads
 
     # copy token embedding into x
-    x = weights.token_embedding_table + token * dim
+    state.x = weights.token_embedding_table[token,:]
 
-    # forward all layer
-    # line 249
-    for nothing in nothing
-        
-    end
+    # 1) forward through all layers
+    for layer in 1:config.n_layers
+
+        # a) attention RMSNorm
+        state.xb = rmsnorm!(state.xb, state.x, weights.rms_att_weight[layer,:])
+
+        # b) linear projection to Q,K,V
+        state.q = @view(weights.wq[layer,:,:]) * state.xb # (dim, dim) * (dim,) = (dim,)
+        state.key_cache[layer, pos, :] = @views weights.wk[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
+        state.value_cache[layer, pos, :] = @views weights.wv[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
+
+        # c) RoPE relative positional encoding: complex-valued rotate q and k in each head
+        for i in range(1, dim, step=2)
+            head_dim = (i-1) % head_size
+            freq = 1.0f0 / (100000.0f0^(head_dim/head_size))
+            val = pos * freq
+            fcr = cos(val)
+            fci = sin(val)
+
+            v0 = state.q[i]
+            v1 = state.q[i+1]
+            state.q[i] = v0 * fcr - v1 * fci
+            state.q[i+1] = v0 * fci + v1 * fcr
+
+
+            if i <= kv_dim
+                v0 = state.key_cache[layer, pos, i]
+                v1 = state.key_cache[layer, pos, i+1]
+                state.key_cache[i] = v0 * fcr - v1 * fci
+                state.key_cache[i+1] = v0 * fci + v1 * fcr
+            end
+        end
+
+        # d) multihead attention       
+        for h in 0:n_heads-1 # iterate over all heads
+
+            # get part of the query vector for this head
+            h_offset = h*head_size + 1 # +1 for Julia indexing
+            q = @view(state.q[h_offset : h_offset + head_size]) # (head_size,)
+            
+            # attention vector for this head
+            att = @view(state.att[h+1, :]) # (seq_len,) +1 for Julia indexing
+
+            # Integer division for assoiciated group number of head,
+            # each head belongs to a certain kv-group, where they share the same wk, wv -> key/value (GQA)
+            group_number = div(h, group_size)
+            kv_offset = group_number * head_size + 1 # +1 for Julia indexing
+
+            # iterate over all timestamps including the current one
+            for t in 1:pos
+                # get the key vector for this head and at this timestep
+                k = @view(state.key_cache[layer, t, kv_offset:kv_offset + head_size]) # (head_size,)
+                # update attention in place to the calculated 'similarity' score
+                att[t] .= dot(q,k) / sqrt(Float32(head_size))
+            end
+
+            # softmax the scores to get attention weights, from 0..pos inclusively
+            softmax!(@view(att[begin:pos]))
+
+            # weighted sum of the values, store back into xb
+            for t in 1:pos
+                # get the value vector for this head and at this timestep
+                v = @view(state.key_cache[layer, t, kv_offset:kv_offset + head_size]) # (head_size,)
+                @. state.xb[h_offset:h_offset + head_size] += v * att[t]
+            end
+        end # end of head loop
+
+        # matmul with wo and xb = attention = value * att_score)
+        state.xb2 = weights.wo[layer,:,:] * state.xb
+
+        # e) residual connection back into x + RMSNorm
+        state.x += state.xb2
+        rmsnorm!(state.xb, x, weights.rms_ffn_weight[layer,:])
+
+        # f) MLP with SwiGLU non-linearity
+        # self.w2(F.silu(self.w1(x)) * self.w3(x))
+        state.hb = @view(weights.w1[layer,:,:]) * state.xb # (hidden_dim, dim) * (dim,) = (hidden_dim,)
+        state.hb2 = @view(weights.w3[layer,:,:]) * state.xb # (hidden_dim, dim) * (dim,) = (hidden_dim,)
+
+        # SwiGLU non-linearity
+        # @. macro prepends . to all operations,
+        @. state.hb *= (1.0f0 / (1.0f0 + exp(-state.hb2)))
+
+        # final matul to get output of MLP
+        state.xb = @view(weights.w2[layer,:,:]) * state.hb # (dim, hidden_dim) * (hidden_dim,) = (dim,)
+
+        # residual connection
+        state.x += state.xb
+    end # end of layer loop
+
+    # 2) RMSNorm
+    rmsnorm!(state.x, state.x, weights.rms_final_weight)
+
+    # 3) classify into logits
+    state.logits = weights.wcls * state.x # (vocab_size, dim) * (dim,) = (vocab_size,)
+    return state.logits
 end
 
-function generate(transformer::Transformer, tokenizer::Tokenizer, sampler, steps:Integer; prompt::String="")
+function generate(transformer::Transformer, tokenizer::Tokenizer, sampler, steps::Int; prompt::String="")
     # start with the input text in prompt
-    prompt_tokens = encoding(prompt, tokenizer.vocab) # return Vector{Int64} containing the ids (tokens?)
+    prompt_tokens = encoding(prompt, tokenizer.vocab) # return Vector{Int} containing the ids (tokens?)
     num_prompt_tokens = length(prompt_tokens)
     if num_prompt_tokens < 1
         throw(error("length of prompt_tokens is $(num_prompt_tokens)!"))

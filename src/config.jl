@@ -1,5 +1,5 @@
 struct Config{T<:Integer}
-    dim::T          # transformer dimension
+    dim::T          # transformer dimension (most likely 4096 like in og LlaMa2)
     hidden_dim::T   # for ffn layers
     n_layers::T     # number of layers
     n_heads::T      # number of query heads
