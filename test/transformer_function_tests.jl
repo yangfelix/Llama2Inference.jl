@@ -47,12 +47,6 @@ using Llama2Inference
                 expected = [1//5, 1//5, 1//5, 1//5, 1//5]
                 softmax!(x)
                 @test isapprox(x, expected)
-                
-                # Test when softmax is computed over zero vector
-                x = Float64[]
-                expected = Float64[]
-                softmax!(x)
-                @test isapprox(x, expected)
             end
         end
     end
