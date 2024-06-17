@@ -7,4 +7,5 @@ using DataStructures
     include("tokenizer_tests.jl")
     include("config_tests.jl")
     include("transformer_weights_tests.jl")
+    include("transformer_function_tests.jl")
 end
