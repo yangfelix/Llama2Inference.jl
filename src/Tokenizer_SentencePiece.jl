@@ -155,7 +155,7 @@ function usecase(text::String, action::Int)
 end
 
 #test
-text = "Hallo Hallo, Ich bin Ph1 L0ng Hallo Hallo #mit einem Lachen 😊 und 中文"
+text = "Hallo Hallo, Ich bin Ph1 L0ng Hallo Hallo #mit einem 😊 und 中文"
 text2 = "this is an example example exam text 2"
 tokenizer_test = Tokenizer_SentencePiece1(text2)
 replace_top_pair!(tokenizer_test.vocab_ids, tokenizer_test.vocab)

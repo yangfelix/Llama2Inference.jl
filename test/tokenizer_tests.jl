@@ -88,3 +88,37 @@ end
 end
 
 
+# Test Tokenizer_SentencePiece.jl
+@testset "Tokenizer_SentencePiece Tests" begin
+    text = "Hallo Hallo, Ich bin Ph1 L0ng Hallo Hallo #mit einem 😊 und 中文"
+    
+    # Initialisierung des Tokenizers
+    tokenizer = Tokenizer_SentencePiece1(text)
+    
+    # Testen, ob die Länge der vocab_ids korrekt ist
+    @test length(tokenizer.vocab_ids) == length(text)
+    
+    # Testen, ob das Vokabular korrekt erstellt wurde
+    @test length(tokenizer.vocab) == length(Set(text))
+    
+    # Vorheriger Zustand von vocab_ids und vocab
+    initial_vocab_ids = copy(tokenizer.vocab_ids)
+    initial_vocab_length = length(tokenizer.vocab)
+    
+    # Anwenden von replace_top_pair!
+    replace_top_pair!(tokenizer.vocab_ids, tokenizer.vocab)
+    
+    # Testen, ob die Länge von vocab_ids korrekt aktualisiert wurde
+    @test length(tokenizer.vocab_ids) <= length(initial_vocab_ids)
+    
+    # Testen, ob das Vokabular erweitert wurde
+    @test length(tokenizer.vocab) > initial_vocab_length
+    
+    # Testen der Encoding-Funktion
+    encoded_ids = encoding(text, tokenizer.vocab)
+    @test typeof(encoded_ids) == Vector{Int}
+    
+    # Testen der Decoding-Funktion
+    decoded_text = decoding(encoded_ids, tokenizer.vocab)
+    @test decoded_text == text
+end
