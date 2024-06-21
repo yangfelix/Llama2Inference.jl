@@ -3,6 +3,7 @@ using StringEncodings: encode
 using DataStructures
 using Mmap: mmap
 using Base.Iterators: partition
+using LinearAlgebra: dot
 
 include("Tokenizer.jl")
 include("config.jl")
@@ -15,7 +16,7 @@ include("transformer.jl")
 
 
 export Tokenizer
-export read_checkpoint, Transformer, forward, rmsnorm!, softmax!, generate
+export read_checkpoint, Transformer, forward, rmsnorm!, softmax!, generate, test_forward
 export Config, set_config_vocab_size, read_config
 export TransformerWeights, get_weights, memory_map_weights
 export replace_top_pair!, Tokenizer, get_most_common_pair, count_consecutive, decoding, encoding

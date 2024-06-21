@@ -29,7 +29,7 @@ normalize `out` in place by the root mean square of `x` and multiply by the lear
 function rmsnorm!(out::AbstractArray{T, 1}, x::AbstractArray{T,1}, weight::AbstractArray{T,1}) where T<:AbstractFloat
     (size(out) == size(x) == size(weight)) || throw(DimensionMismatch("size(out) != size(x) != size(weight), $(size(out)) != $(size(x)) != $(size(weight))."))
     # calculate 1 / (the root mean square of the input)
-    rms = 1.0f0 / sqrt( (sum(x.^2) / length(x)) + 1e-8) # add 1e-8 for numerical stability
+    rms = 1.0f0 / sqrt( (sum(x.^2) / length(x)) + 1e-5) # add 1e-8 for numerical stability
     # multiply by the learned weight and normalize by 
     @. out = weight * x * rms
 end
@@ -46,6 +46,14 @@ function softmax!(x::AbstractArray{T2,1}) where T2<:AbstractFloat
     x .= exp.(x)
     # normalize the values
     x ./= sum(x)
+end
+
+# used for debugging
+function test_forward(token::Int; pos::Int=1)
+    config, weights = read_checkpoint("stories15M.bin")
+    state = RunState(config)
+    logits = forward(config, weights, state, token, pos)
+    return logits
 end
 
 """
@@ -65,25 +73,25 @@ The forward pass looks like the following:
   2) rmsnrom
   3) classify into logits
 """
-function forward(transformer::Transformer, token::Int, pos::Int)
-    # some convenience variables
-    config = transformer.config
+#function forward(transformer::Transformer, token::Int, pos::Int)
+    #= config = transformer.config
     weights = transformer.weights
-    state = transformer.state
+    state = transformer.state =#
+function forward(config::Config, weights::TransformerWeights, state::RunState, token::Int, pos::Int)
+    # some convenience variables
     dim = config.dim
     # integer multiplier of the kv sharing in (multiquery ?) GQA was used in LlaMa2 ...
     # kv_mul = config.n_heads / config.n_kv_heads
-    group_size = config.n_heads / config.n_kv_heads
+    group_size = config.n_heads ÷ config.n_kv_heads
     hidden_dim = config.hidden_dim
-    head_size = dim / config.n_heads
+    head_size = dim ÷ config.n_heads
     kv_dim =  head_size * config.n_kv_heads
 
-    # copy token embedding into x
-    state.x = weights.token_embedding_table[token,:]
+    # copy token embedding into x, TODO probably it is at position token+1 because of Julia indexing, then the values are the same
+    state.x = weights.token_embedding_table[token,:] # (dim,)
 
     # 1) forward through all layers
     for layer in 1:config.n_layers
-
         # a) attention RMSNorm
         state.xb = rmsnorm!(state.xb, state.x, weights.rms_att_weight[layer,:])
 
@@ -96,7 +104,7 @@ function forward(transformer::Transformer, token::Int, pos::Int)
         for i in range(1, dim, step=2)
             head_dim = (i-1) % head_size
             freq = 1.0f0 / (100000.0f0^(head_dim/head_size))
-            val = pos * freq
+            val = (pos-1) * freq # in our code pos is 1-based because of Julia indexing, here we need to subtract 1 to have correct calculations
             fcr = cos(val)
             fci = sin(val)
 
@@ -109,32 +117,32 @@ function forward(transformer::Transformer, token::Int, pos::Int)
             if i <= kv_dim
                 v0 = state.key_cache[layer, pos, i]
                 v1 = state.key_cache[layer, pos, i+1]
-                state.key_cache[i] = v0 * fcr - v1 * fci
-                state.key_cache[i+1] = v0 * fci + v1 * fcr
+                state.key_cache[layer, pos, i] = v0 * fcr - v1 * fci
+                state.key_cache[layer, pos, i+1] = v0 * fci + v1 * fcr
             end
         end
 
         # d) multihead attention       
-        for h in 0:n_heads-1 # iterate over all heads
+        for h in 0:config.n_heads-1 # iterate over all heads
 
             # get part of the query vector for this head
-            h_offset = h*head_size + 1 # +1 for Julia indexing
-            q = @view(state.q[h_offset : h_offset + head_size]) # (head_size,)
+            h_offset = h*head_size
+            q = @view(state.q[h_offset+1 : h_offset + head_size]) # +1 for Julia indexing, (head_size,)
             
             # attention vector for this head
             att = @view(state.att[h+1, :]) # (seq_len,) +1 for Julia indexing
 
             # Integer division for assoiciated group number of head,
             # each head belongs to a certain kv-group, where they share the same wk, wv -> key/value (GQA)
-            group_number = div(h, group_size)
-            kv_offset = group_number * head_size + 1 # +1 for Julia indexing
+            group_number = h ÷ group_size
+            kv_offset = group_number * head_size
 
             # iterate over all timestamps including the current one
             for t in 1:pos
                 # get the key vector for this head and at this timestep
-                k = @view(state.key_cache[layer, t, kv_offset:kv_offset + head_size]) # (head_size,)
+                k = @view(state.key_cache[layer, t, kv_offset+1 : kv_offset + head_size]) # +1 for Julia indexing, (head_size,)
                 # update attention in place to the calculated 'similarity' score
-                att[t] .= dot(q,k) / sqrt(Float32(head_size))
+                att[t] = dot(q,k) / sqrt(Float32(head_size))
             end
 
             # softmax the scores to get attention weights, from 0..pos inclusively
@@ -143,17 +151,17 @@ function forward(transformer::Transformer, token::Int, pos::Int)
             # weighted sum of the values, store back into xb
             for t in 1:pos
                 # get the value vector for this head and at this timestep
-                v = @view(state.key_cache[layer, t, kv_offset:kv_offset + head_size]) # (head_size,)
-                @. state.xb[h_offset:h_offset + head_size] += v * att[t]
+                v = @view(state.value_cache[layer, t, kv_offset+1 : kv_offset + head_size]) # (head_size,)
+                @. state.xb[h_offset+1 : h_offset + head_size] = v * att[t]
             end
         end # end of head loop
 
-        # matmul with wo and xb = attention = value * att_score)
+        # matmul with wo and xb = attention = wo * (value * att_score)
         state.xb2 = weights.wo[layer,:,:] * state.xb
 
         # e) residual connection back into x + RMSNorm
         state.x += state.xb2
-        rmsnorm!(state.xb, x, weights.rms_ffn_weight[layer,:])
+        rmsnorm!(state.xb, state.x, weights.rms_ffn_weight[layer,:])
 
         # f) MLP with SwiGLU non-linearity
         # self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -162,7 +170,7 @@ function forward(transformer::Transformer, token::Int, pos::Int)
 
         # SwiGLU non-linearity
         # @. macro prepends . to all operations,
-        @. state.hb *= (1.0f0 / (1.0f0 + exp(-state.hb2)))
+        @. state.hb *= (1.0f0 / (1.0f0 + exp(-state.hb))) * state.hb2
 
         # final matul to get output of MLP
         state.xb = @view(weights.w2[layer,:,:]) * state.hb # (dim, hidden_dim) * (hidden_dim,) = (dim,)
