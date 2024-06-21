@@ -53,20 +53,21 @@ function memory_map_weights(
         config.seq_len * head_size,
         config.vocab_size * config.dim
     ])
+    # dimensions of the weights, but they need to be inverted to match the order in the binary file (C stores arrays row-wise, Julia column-wise)!
     dims = [
-        (config.vocab_size, config.dim), # token_embedding_table
-        (n_layers, config.dim), # rms_att_weight
-        (n_layers, config.dim, config.n_heads * head_size), # wq
-        (n_layers, config.n_kv_heads * head_size, config.dim), # wk
-        (n_layers, config.n_kv_heads * head_size, config.dim), # wv
-        (n_layers, config.n_heads * head_size, config.dim), # wo
-        (n_layers, config.dim), # rms_ffn_weight
-        (n_layers, config.hidden_dim, config.dim), # w1
-        (n_layers, config.dim, config.hidden_dim), # w2
-        (n_layers, config.hidden_dim, config.dim), # w3
+        (config.dim, config.vocab_size), # token_embedding_table
+        (config.dim, n_layers), # rms_att_weight
+        (config.dim, config.n_heads * head_size, n_layers), # wq
+        (config.dim, config.n_kv_heads * head_size, n_layers), # wk
+        (config.dim, config.n_kv_heads * head_size, n_layers), # wv
+        (config.dim, config.n_heads * head_size, n_layers), # wo
+        (config.dim, n_layers), # rms_ffn_weight
+        (config.dim, config.hidden_dim, n_layers), # w1
+        (config.hidden_dim, config.dim, n_layers), # w2
+        (config.dim, config.hidden_dim, n_layers), # w3
         (config.dim,), # rms_final_weight
-        (config.seq_len, head_size), # skip
-        (config.vocab_size, config.dim), # wcls
+        (head_size, config.seq_len), # skip
+        (config.dim, config.vocab_size), # wcls
     ]
     # if there are no shared offsets then the last offset causes BoundsError so it has to be left out
     length_offsets = shared_weights == 0 ? length(offsets) - 1 : length(offsets) - 2
@@ -75,7 +76,22 @@ function memory_map_weights(
     token_embedding_table = split_weights[1]
 
     wcls = shared_weights == 0 ? split_weights[end] : split_weights[begin]
-    return TransformerWeights(split_weights[1], split_weights[2], split_weights[3], split_weights[4], split_weights[5], split_weights[6], split_weights[7], split_weights[8], split_weights[9], split_weights[10], split_weights[11], wcls)
+
+    # permutation of dimensions is needed to match the original order of dimensions
+    token_embedding_table = permutedims(token_embedding_table)
+    rms_att_weight = permutedims(split_weights[2])
+    wq = permutedims(split_weights[3], (3,2,1))
+    wk = permutedims(split_weights[4], (3,2,1))
+    wv = permutedims(split_weights[5], (3,2,1))
+    wo = permutedims(split_weights[6], (3,2,1))
+    rms_ffn_weight = permutedims(split_weights[7])
+    w1 = permutedims(split_weights[8], (3,2,1))
+    w2 = permutedims(split_weights[9], (3,2,1))
+    w3 = permutedims(split_weights[10], (3,2,1))
+    rms_final_weight = split_weights[11]
+    wcls = permutedims(wcls)
+
+    return TransformerWeights(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight, wcls)
 end
 
 function get_weights(weights::Vector, offset_1, offset_2, dims)::AbstractArray
