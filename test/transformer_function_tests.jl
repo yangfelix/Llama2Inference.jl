@@ -1,5 +1,6 @@
 using Test
 using Llama2Inference
+using DelimitedFiles
 
 @testset "Transformer Tests" begin
     @testset "Single Function Tests" begin
@@ -50,5 +51,22 @@ using Llama2Inference
             end
         end
     end
-    # Add more testsets for other functions in transformer.jl
+    @testset "forward test" begin
+        @testset "forward with token=1 (empty string token) and pos=1" begin
+            # This test uses the run.c file from https://github.com/karpathy/llama2.c/blob/master/run.c
+            # The command "./run stories15M.bin" was used to execute the run.c file
+            # The execution was stopped after the first logits are returned from the forward function
+            # The corresponding logits are of dimension (vocab_size,) = (32000,) and are stored in empty_prompt_logits_first_iteration.csv
+            # The output of the forward function of the transformer.jl are compared with the values stored in empty_prompt_logits_first_iteration.csv
+            # To match the setup of the run.c file, the token is set to 1 and the pos is set to 1 (in the run.c file the token is 1 and the pos is 0)
+            # The difference in the pos is due to the 1-indexed based system in Julia
+            config, weights = read_checkpoint("../stories15M.bin")
+            state = RunState(config)
+            token = 1
+            pos = 1
+            logits = forward(config, weights, state, token, pos)
+            expected_logits = readdlm("../empty_prompt_logits_first_iteration.csv", Float32)
+            @test maximum(abs.(logits - expected_logits)) < 1e-4
+        end
+    end
 end
