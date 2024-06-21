@@ -50,6 +50,8 @@ end
 
 # used for debugging
 function test_forward(token::Int; pos::Int=1)
+    # in run.c token = 1, pos = 0
+    # to reach same logits as in run.c, we need to set pos = 1
     config, weights = read_checkpoint("stories15M.bin")
     state = RunState(config)
     logits = forward(config, weights, state, token, pos)
@@ -88,7 +90,7 @@ function forward(config::Config, weights::TransformerWeights, state::RunState, t
     kv_dim =  head_size * config.n_kv_heads
 
     # copy token embedding into x, TODO probably it is at position token+1 because of Julia indexing, then the values are the same
-    state.x = weights.token_embedding_table[token,:] # (dim,)
+    state.x = weights.token_embedding_table[token+1,:] # (dim,)
 
     # 1) forward through all layers
     for layer in 1:config.n_layers
