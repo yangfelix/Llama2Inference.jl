@@ -1,22 +1,41 @@
 using DataStructures
 
-struct Tokenizer_SentencePiece1
+struct Tokenizer_SentencePiece3
     text::String  # our vocabulary
     #vocab_bytes::Vector{UInt8}
     vocab_ids::Vector{Int}
     vocab::OrderedDict{Int, String}
-    
-    function Tokenizer_SentencePiece1(text::String)
+    vocab_bytes::Vector{UInt8}
 
-        #vocab_bytes = encode(text, "utf-8")  # convert text to unicode  
+    function Tokenizer_SentencePiece3(text::String)
+        #vocab_bytes = Vector{UInt8}(text)
         vocab_ids = collect(Int,text)
+        #vocab_ids = collect(Int, vocab_bytes)
 
-        # idx => [byte] , e.g (0 => [0x00], 1 => [0x01]...)
-        #vocab = OrderedDict(idx => UInt8[idx] for idx in 0:255)
         vocab = OrderedDict{Int, String}()
         for char in text
-            vocab[Int(char)] = string(char)
+            #neu (eine Zeile)
+            if !haskey(vocab,Int(char))
+                vocab[Int(char)] = string(char)
+            end
+        #new(text, vocab_ids, vocab)
         end
+        # for byte in vocab_bytes  
+        #     if !haskey(vocab, Int(byte))
+        #         vocab[Int(byte)] = string(Char(byte)) 
+        #     end
+        # end
+        
+    #NEU 
+    # Hinzufügen von Sonderzeichen und Leerzeichen
+        # if !haskey(vocab, Int(' '))
+        #   vocab[Int(' ')] = " "
+        # end
+        # special_tokens = ["<UNK>", "<PAD>", "<EOS>", "<BOS>"]
+        # for token in special_tokens
+        #     vocab[maximum(keys(vocab)) + 1] = token
+        # end
+
         new(text, vocab_ids, vocab)
     end
 end
@@ -30,13 +49,13 @@ function count_consecutive(vocab_ids::Vector{Int})
         id1 = vocab_ids[i]
         id2 = vocab_ids[i+1]
         pair = (id1,id2)
-        
-        # If the pair exists in the dictionary, increment its count
-        if haskey(pair_dict, pair)
-            pair_dict[pair] += 1
-        else
-            pair_dict[pair] = 1
-        end
+        pair_dict[pair] = get(pair_dict, pair, 0) +1 # neu
+        # If the pair exists in the dictionary, increment its count - alt
+        # if haskey(pair_dict, pair)
+        #     pair_dict[pair] += 1
+        # else
+        #     pair_dict[pair] = 1
+        # end
     end
     return pair_dict
 end
@@ -68,22 +87,20 @@ function replace_top_pair!(vocab_ids::Vector{Int}, vocab::OrderedDict{Int, Strin
         
         if max_count > 1
             (id1, id2) = top_pair
-            #vocab[new_id] = vcat(vocab[id1], vocab[id2])  # add new e.g 256 => [0x04,0x08] to the vocabulary
             new_token = vocab[id1] * vocab[id2]
             vocab[new_id] = new_token
             i = 1
-            #j = 1
 
             while i <= length(vocab_ids)-1
                 if  vocab_ids[i] == id1 && vocab_ids[i+1] == id2
                     vocab_ids[i] = new_id
                     deleteat!(vocab_ids, i+1)
+                    #neu (1Zeile)
+                    i = max(i - 1, 1)
                 else
                     i += 1
                 end
             end
-
-            #resize!(vocab_ids, j - 1)
             num_merges -= 1
             new_id += 1
         else
@@ -106,14 +123,41 @@ function decoding(ids::Vector{Int},vocab::OrderedDict{Int, String})
 end
 
 
+# function repair_invalid_utf8(text::String)::String
+#     repaired_text = IOBuffer()
+#     i = 1
+#     while i <= lastindex(text)
+#         try
+#             c = text[i]
+#             String([c])  # Try to decode single byte
+#             write(repaired_text, c)
+#             i += 1
+#         catch e
+#             if isa(e, Base.InvalidCharError)
+#                 write(repaired_text, UInt8(0xEF))  # � in UTF-8 is 0xEF 0xBF 0xBD
+#                 write(repaired_text, UInt8(0xBF))
+#                 write(repaired_text, UInt8(0xBD))
+#                 i += 1
+#             else
+#                 rethrow(e)
+#             end
+#         end
+#     end
+#     return String(take!(repaired_text))
+# end
+
+
+
+
+
 function encoding(str_text::String, vocab::OrderedDict{Int, String})
     #convert input text into unicode
     text_ids =  collect(Int, str_text)
-    println("Text IDs: ", text_ids)
-    println("Vocab: ", vocab)
+    #println("Text IDs: ", text_ids)
+    #println("Vocab: ", vocab)
     #filter only merges from vocab
     merges = filter(kv -> length(kv[2]) > 1, vocab) # get only the merges e.g 258 => [7,0x17]
-    println("Merges: ", merges)
+    #println("Merges: ", merges)
     ids = Int[] # ids after applying the merged ids
     i = 1
 
@@ -143,11 +187,15 @@ end
 
 #for test: do tokenizer, use replace_top_pair and encoded or encoded+decoded function
 function usecase(text::String, action::Int)
-    tokenizer_test = Tokenizer_SentencePiece1(text)
+    #repaired_text = repair_invalid_utf8(text)
+    #tokenizer_test = Tokenizer_SentencePiece1(repaired_text)
+    tokenizer_test = Tokenizer_SentencePiece3(text)
     replace_top_pair!(tokenizer_test.vocab_ids, tokenizer_test.vocab)
     if action == 1
+        #println("Encoded: ", encoding(repaired_text, tokenizer_test.vocab))
         println("Encoded: ", encoding(text, tokenizer_test.vocab))
     elseif action == 2
+        #println("Decoded: ", decoding(encoding(repaired_text, tokenizer_test.vocab), tokenizer_test.vocab))
         println("Decoded: ", decoding(encoding(text, tokenizer_test.vocab), tokenizer_test.vocab))
     else
         error("Invalid action, Use 1 for encoding and 2 for decoding")
@@ -155,9 +203,9 @@ function usecase(text::String, action::Int)
 end
 
 #test
-text = "Hallo Hallo, Ich bin Ph1 L0ng Hallo Hallo #mit einem 😊 und 中文"
-text2 = "this is an example example exam text 2"
-tokenizer_test = Tokenizer_SentencePiece1(text2)
+text2 = "Hallo Hallo, Ich bin Ph1 L0ng Hallo Hallo #mit einem 😊 und 中文"
+text = "\xC3\x28"
+tokenizer_test = Tokenizer_SentencePiece3(text2)
 replace_top_pair!(tokenizer_test.vocab_ids, tokenizer_test.vocab)
 println("Encoded: ", encoding(text2, tokenizer_test.vocab))
 println("Decoded: ", decoding(encoding(text2, tokenizer_test.vocab), tokenizer_test.vocab))

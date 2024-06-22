@@ -1,0 +1,197 @@
+#Tokenindex structur
+mutable struct TokenIndex
+    str::String
+    id::Int
+end
+
+#Tokenizer_c structur
+mutable struct Tokenizer_c
+    vocab::Vector{Vector{UInt8}}
+    vocab_scores::Vector{Float64}
+    sorted_vocab::Vector{TokenIndex}
+    vocab_size::Int
+    max_token_lenght::UInt32 
+    byte_piece::Vector{UInt8}
+end
+
+#compare_tokens function
+function compare_tokens(a::TokenIndex, b::TokenIndex)
+    return strcmp(a.str, b.str)
+end
+
+#build_tokenizer function
+
+function build_tokenizer(t::Tokenizer_c, tokenizer_path::String, vocab_size::Int)
+    #set vocab size 
+    t.vocab_size    = vocab_size
+
+    #malloc space to hold the score and strings
+    t.vocab = Vector{String}{undef, vocab_size}
+    t.vocab_scores = Vector{Float64}{undef, vocab_size}
+    t.byte_piece = zeros(UInt8,512)
+    for i = 0:255
+        t.byte_piece[i*2 +1] = i
+        t.byte_piece[i*2 +2] = 0
+    end
+
+    #read in the file
+    file = open(tokenizer_path, "rb")
+    if file === nothing
+        error("couldn't load tokenizer_path")
+    end
+
+    # read max_token_lenght
+    t.max_token_lenght = read(file, UInt32)
+
+    #read vocab_scores and vocab
+    for i = 1: vocab_size
+        t.vocab_scores[i] = read(file, Float32)
+        len = read(file, Int32)
+        t.vocab[i] = String(read(file, UInt8, len))
+    end
+    close(file)
+end
+
+#free_tokenizer function
+function free_tokenizer(t::Tokenizer_c)
+    for i = 1:t.vocab_size
+        free(t.vocab[i])
+    end
+    free(t.vocab)
+    free(t.vocab_scores)
+    free(t.sorted_vocab)
+end
+
+#decode function
+function decode(t::Tokenizer_c, prev_token::Int, token::Int)
+    piece = t.vocab[token]
+    #following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
+    if prev_token == 1 && piece[1] == ' '
+        piece = piece[2:end]
+    end
+    #careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
+    # parse this and convert and return the actual byte
+    byte_val = UInt8(0)
+    match = match(r"<0x([0-9a-fA-F]{2})>", piece)
+    if match !== nothing
+        byte_val = parse(UInt8, match.captures[1], base=16)
+        piece = string(t.byte_pieces[Int(byte_val) * 2 +1: Int(byte_val) * 2 + 2])
+    end
+    return piece
+end
+
+#function safe_printf
+function safe_printf(piece::Union{Ptr{Cchar}, Cstring})
+
+    if piece == C_NULL
+        return
+    end
+
+    if piece[1] == missing
+        return
+    end
+
+    if piece[2] == missing
+        byte_val = UInt8(piece[1])
+        if !(isprint(byte_val) || isspace(byte_val))
+            return
+        end
+    end
+    ccall(:printf, Cint, (Cstring,), piece)
+end
+
+# str_lookup function
+function str_lookup(str::String, sorted_vocab::Vector{TokenIndex}, vocab_size::Int)
+    tok = TokenIndex(str, 0)
+    idx = searchsortedfirst([item.str for item in sorted_vocab], str)
+    if idx <= vocab_size &&  sorted_vocab[idx].str == str
+        return sorted_vocab[idx].id
+    else
+        return -1
+    end
+end
+
+#encode function
+function encode(t::Tokenizer_c, text::AbstractString, bos::Int8, eos::Int8, tokens::Vector{Int}, n_tokens::Ref{Int})
+    if text == ""
+        throw(ArgumentError("Cannot encode empty string!"))
+    end
+    if t.sorted_vocab === nothing
+        t.sorted_vocab = sort(TokenIndex.(t.vocab, 1:length(t.vocab)), by=x -> x.str)
+    end
+
+    str_buffer = Vector{UInt8}()
+
+    n_tokens = 0
+
+    if bos != 0
+        tokens[n_tokens + 1] = 1
+        n_tokens[] += 1
+    end
+
+    if text != ""
+        dummy_prefix = str_lookup(" ", t.sorted_vocab, length(t.sorted_vocab))
+        tokens[n_tokens[] + 1] = dummy_prefix
+        n_tokens[] += 1
+    end
+
+    for c in text
+        if (c & 0xC0) != 0x80
+            str_buffer = UInt8[]
+        end
+    push!(str_buffer,c)
+
+        if (next_char(text, c) & 0xC0) == 0x80 && length(str_buffer) < 4
+            continue
+        end
+
+        str = String(str_buffer)
+
+        id = str_lookup(str, t.sorted_vocab, length(t.sorted_vocab))
+
+        if id != -1
+            tokens[n_tokens[]+1] = id
+            n_tokens[] += 1
+        else
+            for b in str_buffer
+                push!(tokens, b + 3)
+                n_tokens[] += 1
+            end
+        end
+
+        str_buffer = UInt8[]
+    end
+
+    while true
+        best_score = -1e10
+        best_id = -1
+        best_idx = -1
+
+        for i in 1:n_tokens[] - 1
+            str = string(t.vocab[tokens[i]], t.vocab[tokens[i+1]])
+            id = str_lookup(str, t.sorted_vocab, length(t.sorted_vocab))
+
+            if id != -1 && t.vocab_scores[id] > best_score
+                best_score = t.vocab_scores[id]
+                best_id = id
+                best_idx = i
+            end
+        end
+        if  best_idx == -1
+            break
+        end
+
+        tokens[best_idx] = best_id
+
+        for i in best_idx+1:n_tokens[]-1
+            tokens[i] = tokens[i+1]
+        end
+
+        n_tokens[] -= 1
+    end
+
+    if eos != 0
+        tokens[n_tokens[] + 1] = 2
+        n_tokens[] += 1
+    end
+end
