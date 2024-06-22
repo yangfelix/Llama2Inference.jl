@@ -1,266 +1,173 @@
 using DataStructures
 
-"""
-    struct Tokenizer
-
-Tokenizer struct that represents a text tokenizer.
-
-# Fields
-- `text::String`: The input text that will be used for training.
-- `vocab_bytes::Vector{UInt8}`: Byte representation of the provided text.
-- `vocab_ids::Vector{Int}`: IDs corresponding to the text bytes.
-- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping the IDs from 0 to 255 to bytes.
-
-# Constructor
-`Tokenizer(text::String)`: Constructs a new `Tokenizer` object.
-
-# Examples
-
-text = "hello"
-tokenizer = Tokenizer(text)
-
-"""
+struct TokenIndex
+    str::String
+    id::Int
+end
 
 struct Tokenizer
-    text::String  # our vocabulary
-    vocab_bytes::Vector{UInt8}
-    vocab_ids::Vector{Int}
-    vocab::OrderedDict{Int, Vector{UInt8}}
+    vocab_size::Int
+    vocab::Vector{String}
+    vocab_scores::Vector{Float32}
+    max_token_length::Int
+    sorted_vocab::Union{Nothing, Vector{TokenIndex}}   # can be either nothing or vector of tokens and their indices
     
-    function Tokenizer(text::String)
-
-        # simple example for me:
-        # text = "hi" , vocab_bytes = [0x68,0x69] , vocab_ids = [104,105] , UInt8(104) = 0x68, String(vocab_bytes) = "hi" 
-
-        vocab_bytes = encode(text, "utf-8")  # convert text to unicode  
-        vocab_ids = [Int(byte) for byte in vocab_bytes]
-
-        # idx => [byte] , e.g (0 => [0x00], 1 => [0x01]...)
-        vocab = OrderedDict(idx => UInt8[idx] for idx in 0:255)  
-        new(text, vocab_bytes,vocab_ids, vocab)
-    end
-
 end
 
-
-"""
-    count_consecutive(vocab_ids::Vector{Int})
-
-Count consecutive pairs of vocabulary IDs in the training data.
-
-# Arguments
-- `vocab_ids::Vector{Int}`: Vector of the trainings text's vocabulary IDs.
-
-# Returns
-- pair_dict::Dict: Dictionary containing number of occurrences of each consecutive pairs.
-
-# Example 
-text = "hello"
-tokenizer = Tokenizer(text)
-pair_dict = count_consecutive(tokenizer.vocab_ids)
-"""
-
-# function that counts most common consecutive pairs
-
-function count_consecutive(vocab_ids::Vector{Int})
-    pair_dict = Dict{Tuple{Int, Int}, Int}()
+function build_tokenizer(filepath::String, vocab_size::Int)
+    vocab = Vector{String}(undef, vocab_size)
+    vocab_scores = Vector{Float32}(undef, vocab_size)
     
-    # iterate over the ids, excluding the last id and get number of occurrences of all consecutive pairs
-    for i in 1:length(vocab_ids)-1
-        id1 = vocab_ids[i]
-        id2 = vocab_ids[i+1]
-        pair = (id1,id2)
-        
-        # If the pair exists in the dictionary, increment its count
-        if haskey(pair_dict, pair)
-            pair_dict[pair] += 1
-        else
-            pair_dict[pair] = 1
+    file = open(filepath, "r")
+    try
+        max_token_length = read(file, Int32)
+        for i in 1:vocab_size
+            vocab_scores[i] = read(file, Float32)
+            len = read(file, Int32)
+            vocab[i] = String(read(file, len))
         end
+    catch e
+        close(file)
+        rethrow(e)
     end
-    return pair_dict
+    close(file)
+
+    return Tokenizer(vocab_size, vocab, vocab_scores, max_token_length)
 end
 
-"""
-    get_most_common_pair(vocab_ids::Vector{Int})
+function sort_vocab!(tokenizer::Tokenizer)
+    if tokenizer.sorted_vocab === nothing
+        tokenizer.sorted_vocab = Vector{TokenIndex}()
+        seen_strings = Set{String}()
 
-Get the most common consecutive pair of vocabulary IDs in the training data.
-
-# Arguments
-- `vocab_ids::Vector{Int}`: Vector of the trainings text's vocabulary IDs.
-
-# Returns
-- `top_pair::Tuple{Int, Int}, max_count::Int`: Tuple containing the most common pair and its count.
-
-# Calls 
-- `count_consecutive` : Gets the dictionary containing number of occurrences of each consecutive pairs.
-
-# Examples
-
-text = "hello"
-tokenizer = Tokenizer(text)
-top_pair, max_count = get_most_common_pair(tokenizer.vocab_ids)
-
-"""
-function get_most_common_pair(vocab_ids::Vector{Int})
-    pair_dict = count_consecutive(vocab_ids)
-    top_pair = nothing
-    max_count = 0
-    
-    for (pair, count) in pair_dict
-        if count > max_count
-            top_pair = pair
-            max_count = count
-        end
-    end
-    
-    return top_pair,max_count
-end
-
-"""
-    replace_top_pair!(vocab_ids::Vector{Int}, vocab::OrderedDict{Int, Vector{UInt8}})
-
-Replaces the 20 most common consecutive pairs with a new vocabulary ID.
-
-# Arguments
-- `vocab_ids::Vector{Int}`: Vector of the trainings text's vocabulary IDs.
-- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping IDs to vocabulary bytes.
-
-# Calls 
-- `get_most_common_pair` : Gets the most common pair.
-
-# Examples
-text = "hello"
-tokenizer = Tokenizer(text)
-replace_top_pair!(tokenizer.vocab_ids, tokenizer.vocab)
-
-"""
-function replace_top_pair!(vocab_ids::Vector{Int}, vocab::OrderedDict{Int, Vector{UInt8}})
-    desired_vocab_size = 276
-    num_merges = desired_vocab_size - 256
-    new_id = 256
-
-    while num_merges > 0
-        top_pair, max_count = get_most_common_pair(vocab_ids)
-        
-        if max_count > 1
-            (id1, id2) = top_pair
-            vocab[new_id] = vcat(vocab[id1], vocab[id2])  # add new e.g 256 => [0x04,0x08] to the vocabulary
-      
-            i = 1
-            j = 1
-
-            while i <= length(vocab_ids)
-                if i < length(vocab_ids) && vocab_ids[i] == id1 && vocab_ids[i+1] == id2
-                    vocab_ids[j] = new_id
-                    i += 2
-                else
-                    vocab_ids[j] = vocab_ids[i]
-                    i += 1
-                end
-                j += 1
+        for i in 1:tokenizer.vocab_size
+            str = tokenizer.vocab[i]
+            if str in seen_strings
+                continue  # skip if we've already seen this string
             end
 
-            resize!(vocab_ids, j - 1)
-            num_merges -= 1
-            new_id += 1
+            push!(seen_strings, str)
+            push!(tokenizer.sorted_vocab, TokenIndex(str, i))
+        end
+
+        sort!(tokenizer.sorted_vocab, by = x -> x.str)
+    end
+end
+
+# find the id corresponding to a "token"
+function find_token_id(tokenizer::Tokenizer, token_str::String)
+    for token_index in tokenizer.sorted_vocab
+        if token_index.str == token_str
+            return token_index.id
+        end
+    end
+    return -1  
+end
+
+function find_token_str(tokenizer::Tokenizer, token_id::Int)
+    for token_index in tokenizer.sorted_vocab
+        if token_index.id == token_id
+            return token_index.str
+        end
+    end
+    return nothing
+end
+
+
+function decode(tokenizer::Tokenizer, prev_token::Int, token::Int)
+    token_str = find_token_str(tokenizer,token)
+    # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
+    if prev_token == BOS_TOKEN && token_str[1] == ' '
+        token_str = token_str[2:end]   # example for me "text" -> "ext"
+    end
+
+    # check for raw bytes tokens
+    if startswith(token, "<") && endswith(token, ">")
+        # remove '<' and '>' to gethexadecimal format 
+        hex_str = token[3:end-1]  # example for me "<0x01>" will be "x01"
+        
+        # Parse the hexadecimal string into a UInt8 byte
+        byte_val = parse(UInt8, hex_str, base=16)
+        
+        return byte_val
+    else
+        error("Invalid token format: $token")
+    end
+
+end
+# we split the encode function for "cleaner" code
+function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
+    sort_vocab!(tokenizer)   # check if each token is already mapped to an index
+
+    text_bytes = StringEncodings.encode(text, "utf-8")  # convert text to unicode  
+
+    tokens_indices = Vector{TokenIndex}()
+
+    # optionally add the BOS token
+    if BOS != 0
+        push!(tokens, BOS)
+    end
+
+    if text != ""
+        token_str = " "
+        token_id = find_token_id(tokenizer, token_str)
+        push!(tokens_indices, TokenIndex(token_str, token_id))
+    end
+
+    # lookup each token in the tokenizer's vocabulary and store its ID
+    for token in text_bytes
+        token_str = String(token)
+        token_id = find_token_id(tokenizer, token_str)
+        if token_id != -1
+            push!(tokens_indices, TokenIndex(token_str, token_id))
         else
+            # handle unknown tokens 
+            push!(tokens_indices, TokenIndex(nothing, -1)) 
+        end
+    end
+
+    n_tokens = length(tokens_indices)
+
+    # perform merges (bpe) based on scores
+    while true
+        best_score = -1e10;
+        best_id = -1;
+        best_idx = -1;
+        merged_str;
+
+        for i in 1:(n_tokens - 1)
+            token1 = tokens_indices[i].str
+            token2 = tokens_indices[i+1].str
+            
+            merged_str = token1*token2
+            merged_token_id = find_token_id(tokenizer, merged_str)
+            # check if new merged token exists and its score is better than the current one
+            if(merged_token_id != -1 && tokenizer.vocab_scores[merged_token_id]  > best_score){
+                best_score = tokenizer.vocab_scores[merged_token_id];
+                best_id = merged_token_id;
+                best_idx = i;
+            }
+        end
+        # no more merges possible
+        if best_idx == -1
             break
-        end 
-    end
-
-end
-
-"""
-    decoding(ids::Vector{Int}, vocab::OrderedDict{Int, Vector{UInt8}})
-
-Decode a sequence of vocabulary IDs into text.
-
-# Arguments
-- `ids::Vector{Int}`: Vector of text IDs.
-- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping IDs to vocabulary bytes.
-
-# Returns
-- `text::String`: Decoded text.
-
-# Examples
-text = "hello"
-tokenizer = Tokenizer(text)
-ids = [104, 105]
-decoded_text = decoding(ids, tokenizer.vocab)
-"""
-# ids to text, vocab is the new vocab where the consecutive pairs are alreay merged
-function decoding(ids::Vector{Int},vocab::OrderedDict{Int, Vector{UInt8}})
-    # simple example for me:
-    # vocab = (0 => [0x00], 1 => [0x01].., 258 => [7,0x17])
-    # text = "hi" , vocab_bytes = [0x68,0x69] , vocab_ids = [104,105] , UInt8(104) = 0x68, String(vocab_bytes) = "hi" 
-    
-    text_bytes = Vector{UInt8}()
-
-    for id in ids
-        for i in vocab[id]
-            push!(text_bytes, i)   # push the byte(s) corresponding to this id
-        end
-    end
-
-    return String(text_bytes)
-end
-
-"""
-    encoding(str_text::String, vocab::OrderedDict{Int, Vector{UInt8}})
-
-Encode text into a sequence of vocabulary IDs.
-
-# Arguments
-- `str_text::String`: Input text.
-- `vocab::OrderedDict{Int, Vector{UInt8}}`: Ordered dictionary mapping IDs to vocabulary bytes.
-
-# Returns
-- `ids::Vector{Int}`: Encoded vocabulary IDs.
-
-# Examples
-1.
-text = "this is a this test text with some repeated text  with some with some text"
-tokenizer = Tokenizer(text)
-replace_top_pair!(tokenizer.vocab_ids,tokenizer.vocab)
-str_text = "this"  
-ids = encoding(str_text,tokenizer.vocab)
-
-2.
-decoding(encoding("hello",tokenizer.vocab),tokenizer.vocab) == "hello"
-"""
-# text to ids, vocab is the new vocab where the consecutive pairs are alreay merged
-function encoding(str_text::String, vocab::OrderedDict{Int, Vector{UInt8}})
-    text_bytes = encode(str_text, "utf-8")  # convert text to unicode  
-    text_ids = [Int(byte) for byte in text_bytes] # get ids of text
-
-    merges = OrderedDict(filter(kv -> length(kv[2]) > 1, vocab)) # get only the merges e.g 258 => [7,0x17]
-
-    ids = Int[] # ids after applying the merged ids
-    i = 1
-
-    while i <= length(text_ids)
-        found_merge = false
-
-        for (id, merge) in merges
-            merge_length = length(merge)
-            if i + merge_length - 1 <= length(text_ids) && text_ids[i:i+merge_length-1] == merge
-                push!(ids, id)
-                i += merge_length
-                found_merge = true
-                break
-            end
         end
 
-        if !found_merge
-            push!(ids, text_ids[i])
-            i += 1
-        end
+        # merge the consecutive pair (best_idx, best_idx+1) into new token best_id
+        tokens_indices[best_idx] = TokenIndex(merged_str,best_id) # replace the first token index with the merged one
+        splice!(tokens_indices, best_idx + 1)  # delete the second token index 
+        n_tokens = length(tokens_indices)
+
     end
 
+    if EOS != 0
+        push!(tokens, BOS)
+    end
+
+    # extract ids
+    ids = [token_index.id for token_index in tokens_indices]
     return ids
 end
-
 
 
 

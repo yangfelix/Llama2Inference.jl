@@ -1,11 +1,11 @@
 module Llama2Inference
-using StringEncodings: encode
+using StringEncodings
 using DataStructures
-export Tokenizer
 using Base.Iterators: partition
+export Tokenizer
+export TokenIndex
 
-
-export replace_top_pair!,Tokenizer,get_most_common_pair,count_consecutive,decoding,encoding
 include("Tokenizer.jl")
+export encode,decode,find_token_str,find_token_id,sort_vocab!,build_tokenizer
 
 end
