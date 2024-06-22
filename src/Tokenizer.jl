@@ -142,11 +142,11 @@ function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
             merged_str = token1*token2
             merged_token_id = find_token_id(tokenizer, merged_str)
             # check if new merged token exists and its score is better than the current one
-            if(merged_token_id != -1 && tokenizer.vocab_scores[merged_token_id]  > best_score){
+            if(merged_token_id != -1 && tokenizer.vocab_scores[merged_token_id]  > best_score)
                 best_score = tokenizer.vocab_scores[merged_token_id];
                 best_id = merged_token_id;
                 best_idx = i;
-            }
+            end
         end
         # no more merges possible
         if best_idx == -1
@@ -165,10 +165,7 @@ function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
     end
 
     # extract ids
-    ids = [token_index.id for token_index in tokens_indices]
+    ids = [token_index.id for token_index in tokens_indices] 
     return ids
+
 end
-
-
-
-
