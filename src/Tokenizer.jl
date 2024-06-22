@@ -17,9 +17,11 @@ end
 function build_tokenizer(filepath::String, vocab_size::Int)
     vocab = Vector{String}(undef, vocab_size)
     vocab_scores = Vector{Float32}(undef, vocab_size)
+    max_token_length = 0
     
-    file = open(filepath, "r")
+    file = open(filepath)
     try
+        
         max_token_length = read(file, Int32)
         for i in 1:vocab_size
             vocab_scores[i] = read(file, Float32)
@@ -32,12 +34,14 @@ function build_tokenizer(filepath::String, vocab_size::Int)
     end
     close(file)
 
-    return Tokenizer(vocab_size, vocab, vocab_scores, max_token_length)
+    sorted_vocab = Vector{Nothing}()
+    return Tokenizer(vocab_size, vocab, vocab_scores, max_token_length,sorted_vocab)
 end
 
 function sort_vocab!(tokenizer::Tokenizer)
-    if tokenizer.sorted_vocab === nothing
-        tokenizer.sorted_vocab = Vector{TokenIndex}()
+   
+    if isnothing(tokenizer.sorted_vocab) || isempty(tokenizer.sorted_vocab)
+        #tokenizer.sorted_vocab = Vector{TokenIndex}()
         seen_strings = Set{String}()
 
         for i in 1:tokenizer.vocab_size
@@ -76,6 +80,7 @@ end
 
 function decode(tokenizer::Tokenizer, prev_token::Int, token::Int)
     token_str = find_token_str(tokenizer,token)
+   
     # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
     if prev_token == BOS_TOKEN && token_str[1] == ' '
         token_str = token_str[2:end]   # example for me "text" -> "ext"
@@ -98,15 +103,15 @@ end
 # we split the encode function for "cleaner" code
 function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
     sort_vocab!(tokenizer)   # check if each token is already mapped to an index
-
     text_bytes = StringEncodings.encode(text, "utf-8")  # convert text to unicode  
 
     tokens_indices = Vector{TokenIndex}()
 
     # optionally add the BOS token
-    if BOS != 0
-        push!(tokens, BOS)
-    end
+    
+    push!(tokens_indices, TokenIndex("", BOS))
+
+    
 
     if text != ""
         token_str = " "
@@ -116,13 +121,13 @@ function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
 
     # lookup each token in the tokenizer's vocabulary and store its ID
     for token in text_bytes
-        token_str = String(token)
+        token_str = String([token])
         token_id = find_token_id(tokenizer, token_str)
         if token_id != -1
             push!(tokens_indices, TokenIndex(token_str, token_id))
         else
             # handle unknown tokens 
-            push!(tokens_indices, TokenIndex(nothing, -1)) 
+            push!(tokens_indices, TokenIndex("", -1)) 
         end
     end
 
@@ -130,12 +135,13 @@ function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
 
     # perform merges (bpe) based on scores
     while true
+        
         best_score = -1e10;
         best_id = -1;
         best_idx = -1;
-        merged_str;
+        merged_str = " "
 
-        for i in 1:(n_tokens - 1)
+        for i in BOS:(n_tokens - 1)
             token1 = tokens_indices[i].str
             token2 = tokens_indices[i+1].str
             
@@ -146,6 +152,7 @@ function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
                 best_score = tokenizer.vocab_scores[merged_token_id];
                 best_id = merged_token_id;
                 best_idx = i;
+                break
             end
         end
         # no more merges possible
@@ -154,14 +161,17 @@ function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
         end
 
         # merge the consecutive pair (best_idx, best_idx+1) into new token best_id
+       
         tokens_indices[best_idx] = TokenIndex(merged_str,best_id) # replace the first token index with the merged one
-        splice!(tokens_indices, best_idx + 1)  # delete the second token index 
+        deleteat!(tokens_indices, best_idx + 1)  # delete the second token index 
+        
         n_tokens = length(tokens_indices)
+       
 
     end
 
     if EOS != 0
-        push!(tokens, BOS)
+        push!(tokens_indices, TokenIndex("", EOS))
     end
 
     # extract ids
