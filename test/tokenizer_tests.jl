@@ -6,7 +6,7 @@ using Llama2Inference
     vocab_size = 32000
     BOS::Int = 2
     EOS::Int = 0
-    tokenizer_path = "./tokenizer.bin"
+    tokenizer_path = "../tokenizer.bin"
     tokenizer = build_tokenizer(tokenizer_path,vocab_size)
     sv = sort_vocab!(tokenizer)
     
