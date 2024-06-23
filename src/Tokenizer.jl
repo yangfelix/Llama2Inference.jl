@@ -101,6 +101,7 @@ function decode(tokenizer::Tokenizer, prev_token::Int, token::Int, BOS::Int )
 
 end
 # we split the encode function for "cleaner" code
+# TODO BOS and EOS should always map to the same id right? (BOS = 2, EOS = 3, corresponding to l. 454 in run.c) maybe make them to bools use the constants if needed
 function encode(tokenizer::Tokenizer, text::String, BOS::Int, EOS::Int)
     sort_vocab!(tokenizer)   # Ensure tokenizer's vocabulary is sorted
     text_bytes = StringEncodings.encode(text, "utf-8")  # Convert text to bytes

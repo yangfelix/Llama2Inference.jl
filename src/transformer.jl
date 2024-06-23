@@ -1,10 +1,6 @@
 struct Transformer
     config::Config
     weights::TransformerWeights
-    state::RunState
-    fd::Int
-    data::Array{float}
-    file_size::Int
 end
 
 function read_checkpoint(checkpoint::String)::Tuple{Config,TransformerWeights}#, config::Config, weights::TransformerWeights, fd::Int, data::Array{float}, file_size::Int)
@@ -48,6 +44,20 @@ function softmax!(x::AbstractArray{T2,1}) where T2<:AbstractFloat
     x ./= sum(x)
 end
 
+function safe_print(piece::String)
+    if piece[1] == '\0'
+        return
+    end
+    if length(piece) > 1
+        byte_val::Char = piece[1]
+        if !(isprint(byte_val) || isspace(byte_val))
+            return
+        end
+    end
+    print(piece)
+end
+
+
 # used for debugging
 function test_forward(token::Int; pos::Int=1)
     # in run.c token = 1, pos = 0
@@ -75,11 +85,11 @@ The forward pass looks like the following:
   2) rmsnrom
   3) classify into logits
 """
-#function forward(transformer::Transformer, token::Int, pos::Int)
-    #= config = transformer.config
+function forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
+    #println("The token is: ", token, " and the position is: ", pos)
+
+    config = transformer.config
     weights = transformer.weights
-    state = transformer.state =#
-function forward(config::Config, weights::TransformerWeights, state::RunState, token::Int, pos::Int)
     # some convenience variables
     dim = config.dim
     # integer multiplier of the kv sharing in (multiquery ?) GQA was used in LlaMa2 ...
@@ -89,23 +99,27 @@ function forward(config::Config, weights::TransformerWeights, state::RunState, t
     head_size = dim ÷ config.n_heads
     kv_dim =  head_size * config.n_kv_heads
 
-    # copy token embedding into x, TODO probably it is at position token+1 because of Julia indexing, then the values are the same
-    state.x = weights.token_embedding_table[token+1,:] # (dim,)
+    # copy token embedding into x
+    state.x = weights.token_embedding_table[token,:] # (dim,)
 
     # 1) forward through all layers
     for layer in 1:config.n_layers
         # a) attention RMSNorm
-        state.xb = rmsnorm!(state.xb, state.x, weights.rms_att_weight[layer,:])
+        #TODO state.x is different when POSITION != 1 AND layer != 1, weights are correct
+
+        rmsnorm!(state.xb, state.x, weights.rms_att_weight[layer,:]) 
 
         # b) linear projection to Q,K,V
+        # TODO q,k,v at layer = 1 are correct, at layer = 2 are not when POSITION != 1
         state.q = @view(weights.wq[layer,:,:]) * state.xb # (dim, dim) * (dim,) = (dim,)
         state.key_cache[layer, pos, :] = @views weights.wk[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
         state.value_cache[layer, pos, :] = @views weights.wv[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
 
         # c) RoPE relative positional encoding: complex-valued rotate q and k in each head
+        # TODO states are correct at layer = 1 regardless of POSITION
         for i in range(1, dim, step=2)
             head_dim = (i-1) % head_size
-            freq = 1.0f0 / (100000.0f0^(head_dim/head_size))
+            freq = 1.0f0 / (10000.0f0^(head_dim/head_size))
             val = (pos-1) * freq # in our code pos is 1-based because of Julia indexing, here we need to subtract 1 to have correct calculations
             fcr = cos(val)
             fci = sin(val)
@@ -115,7 +129,6 @@ function forward(config::Config, weights::TransformerWeights, state::RunState, t
             state.q[i] = v0 * fcr - v1 * fci
             state.q[i+1] = v0 * fci + v1 * fcr
 
-
             if i <= kv_dim
                 v0 = state.key_cache[layer, pos, i]
                 v1 = state.key_cache[layer, pos, i+1]
@@ -124,12 +137,13 @@ function forward(config::Config, weights::TransformerWeights, state::RunState, t
             end
         end
 
-        # d) multihead attention       
+        # d) multihead attention
         for h in 0:config.n_heads-1 # iterate over all heads
 
             # get part of the query vector for this head
             h_offset = h*head_size
             q = @view(state.q[h_offset+1 : h_offset + head_size]) # +1 for Julia indexing, (head_size,)
+            # TODO at layer = 1, q is correct regardless of POSITION and h
             
             # attention vector for this head
             att = @view(state.att[h+1, :]) # (seq_len,) +1 for Julia indexing
@@ -149,13 +163,21 @@ function forward(config::Config, weights::TransformerWeights, state::RunState, t
 
             # softmax the scores to get attention weights, from 0..pos inclusively
             softmax!(@view(att[begin:pos]))
+            # TODO att is correct at layer = 1 regardless of POSITION and h
 
             # weighted sum of the values, store back into xb
+            state.xb[h_offset+1 : h_offset + head_size] .= 0.0f0
             for t in 1:pos
                 # get the value vector for this head and at this timestep
                 v = @view(state.value_cache[layer, t, kv_offset+1 : kv_offset + head_size]) # (head_size,)
-                @. state.xb[h_offset+1 : h_offset + head_size] = v * att[t]
+                @. state.xb[h_offset+1 : h_offset + head_size] += v * att[t]
             end
+            #=
+            if layer == 1 && h == 0
+                println("state.xb at layer $layer and h $h is: ", state.xb[h_offset+1 : h_offset + 10])
+            end
+            =#
+
         end # end of head loop
 
         # matmul with wo and xb = attention = wo * (value * att_score)
@@ -179,32 +201,56 @@ function forward(config::Config, weights::TransformerWeights, state::RunState, t
 
         # residual connection
         state.x += state.xb
+
+        # TODO state.x is different when POSITION != 1 even when LAYER = 1
+        #=
+        if layer == 1
+            println("The state.x at end of layer ", layer, " is: ", state.x[begin:10])
+        end
+        =#
+
     end # end of layer loop
+
+    #TODO println("state.x is: ", state.x[begin:10], "\n")
 
     # 2) RMSNorm
     rmsnorm!(state.x, state.x, weights.rms_final_weight)
 
     # 3) classify into logits
     state.logits = weights.wcls * state.x # (vocab_size, dim) * (dim,) = (vocab_size,)
+    
     return state.logits
 end
 
-function generate(transformer::Transformer, tokenizer::Tokenizer, sampler, steps::Int; prompt::String="")
+function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="")
     # start with the input text in prompt
-    prompt_tokens = encoding(prompt, tokenizer.vocab) # return Vector{Int} containing the ids (tokens?)
+    prompt_tokens = encode(tokenizer, prompt, 2, 0) # return Vector{Int} containing the ids (tokens?)
     num_prompt_tokens = length(prompt_tokens)
     if num_prompt_tokens < 1
         throw(error("length of prompt_tokens is $(num_prompt_tokens)!"))
     end
+
+    # initiate the state
+    state = RunState(transformer.config)
 
     # start the main loop
     next = nothing
     token = prompt_tokens[1]
     pos = 1 # Julia is 1 vs. C is 0
 
+    print("The prompt tokens are: ", prompt_tokens, "\n")
+
     while pos < steps
         # forward the transformer to get logits for the next token
-        logits = forward(transformer, token, pos)
+        logits = forward(transformer, state, token, pos)
+
+        #=
+        println("The logits at position ", pos, " are: ", logits[begin:10], "\n")
+
+        if pos == 4
+            break
+        end
+        =#
 
         # advance the state machine
         if (pos < num_prompt_tokens)
@@ -216,16 +262,26 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler, steps
         end
         pos += 1
 
-        # data-dependent terminating condition: the BOS (=1) token delimits sequences
-        if (next == 1)
+        # data-dependent terminating condition: the BOS (=2) token delimits sequences
+        if (next == 2)
             break
         end
 
         # print the token as string, decode it with the Tokenizer object
-        piece = decoding(token, tokenizer.vocab)
-        print(piece) # same as printf("%s", piece), but skips "unsafe" bytes
+        piece = decode(tokenizer, token, next, 2)
+        #print("Type of Token is ", typeof(piece), " length of token = ", length(piece), " ")
+        safe_print(piece) # same as printf("%s", piece), but skips "unsafe" bytes
+        #print("\n")
         token = next
     end
 
     println("")
+end
+
+function test_generate(;prompt="")
+    config, weights = read_checkpoint("./stories15M.bin")
+    sampler = Sampler(Int(config.vocab_size), 1.0f0, 0.9f0)
+    transformer = Transformer(config, weights)
+    tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
+    generate(transformer, tokenizer, sampler, 256; prompt=prompt)
 end

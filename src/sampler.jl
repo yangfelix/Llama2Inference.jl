@@ -9,7 +9,7 @@ end
 #= function ProbIndex(prob::Float32, index::Int)
     return ProbIndex(prob, index)
 end =#
-
+# TODO change type of vocab_size to Int32 (Type of Config.vocab_size)
 mutable struct Sampler
     vocab_size::Int
     temperature::Float32
