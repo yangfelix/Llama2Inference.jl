@@ -77,105 +77,101 @@ function find_token_str(tokenizer::Tokenizer, token_id::Int)
     return nothing
 end
 
-
-function decode(tokenizer::Tokenizer, prev_token::Int, token::Int)
+#from id to str
+function decode(tokenizer::Tokenizer, prev_token::Int, token::Int, BOS::Int )
     token_str = find_token_str(tokenizer,token)
    
     # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
-    if prev_token == BOS_TOKEN && token_str[1] == ' '
+    if prev_token == BOS && token_str[1] == ' '
         token_str = token_str[2:end]   # example for me "text" -> "ext"
     end
-
+    
     # check for raw bytes tokens
-    if startswith(token, "<") && endswith(token, ">")
+    if startswith(token_str, "<") && endswith(token_str, ">")
         # remove '<' and '>' to gethexadecimal format 
-        hex_str = token[3:end-1]  # example for me "<0x01>" will be "x01"
+        hex_str = token_str[3:end-1]  # example for me "<0x01>" will be "x01"
         
         # Parse the hexadecimal string into a UInt8 byte
         byte_val = parse(UInt8, hex_str, base=16)
         
         return byte_val
     else
-        error("Invalid token format: $token")
+        return token_str
     end
 
 end
 # we split the encode function for "cleaner" code
-function encode(tokenizer::Tokenizer, text::String, BOS::Int32, EOS::Int32)
-    sort_vocab!(tokenizer)   # check if each token is already mapped to an index
-    text_bytes = StringEncodings.encode(text, "utf-8")  # convert text to unicode  
+function encode(tokenizer::Tokenizer, text::String, BOS::Int, EOS::Int)
+    sort_vocab!(tokenizer)   # Ensure tokenizer's vocabulary is sorted
+    text_bytes = StringEncodings.encode(text, "utf-8")  # Convert text to bytes
 
-    tokens_indices = Vector{TokenIndex}()
+    tokens_indices = Vector{Int}()
 
-    # optionally add the BOS token
+    # Optionally add the BOS token
+    if BOS != 0
+        push!(tokens_indices, BOS)
+    end
     
-    push!(tokens_indices, TokenIndex("", BOS))
-
-    
-
+    # Handle whitespace token if text is non-empty
     if text != ""
         token_str = " "
         token_id = find_token_id(tokenizer, token_str)
-        push!(tokens_indices, TokenIndex(token_str, token_id))
+        push!(tokens_indices, token_id)
     end
 
-    # lookup each token in the tokenizer's vocabulary and store its ID
+    # Lookup each byte token in the tokenizer's vocabulary and store its ID
     for token in text_bytes
         token_str = String([token])
         token_id = find_token_id(tokenizer, token_str)
         if token_id != -1
-            push!(tokens_indices, TokenIndex(token_str, token_id))
+            push!(tokens_indices, token_id)
         else
-            # handle unknown tokens 
-            push!(tokens_indices, TokenIndex("", -1)) 
+            # Handle unknown tokens
+            push!(tokens_indices, -1)  # Use -1 for unknown tokens
         end
     end
 
     n_tokens = length(tokens_indices)
 
-    # perform merges (bpe) based on scores
+    # Perform merges (BPE) based on scores
     while true
-        
-        best_score = -1e10;
-        best_id = -1;
-        best_idx = -1;
-        merged_str = " "
+        best_score = -1e10
+        best_id = -1
+        best_idx = -1
+        merged_str = ""
 
-        for i in BOS:(n_tokens - 1)
-            token1 = tokens_indices[i].str
-            token2 = tokens_indices[i+1].str
+        for i in 1:(n_tokens - 1)
+            token1 = tokens_indices[i]
+            token2 = tokens_indices[i+1]
             
-            merged_str = token1*token2
+            merged_str = tokenizer.vocab[token1] * tokenizer.vocab[token2]
+
             merged_token_id = find_token_id(tokenizer, merged_str)
-            # check if new merged token exists and its score is better than the current one
-            if(merged_token_id != -1 && tokenizer.vocab_scores[merged_token_id]  > best_score)
-                best_score = tokenizer.vocab_scores[merged_token_id];
-                best_id = merged_token_id;
-                best_idx = i;
-                break
+
+            # Check if new merged token exists and its score is better than the current one
+            if merged_token_id != -1 && tokenizer.vocab_scores[merged_token_id] > best_score
+                best_score = tokenizer.vocab_scores[merged_token_id]
+                best_id = merged_token_id
+                best_idx = i
             end
         end
-        # no more merges possible
+
+        # No more merges possible
         if best_idx == -1
             break
         end
 
-        # merge the consecutive pair (best_idx, best_idx+1) into new token best_id
-       
-        tokens_indices[best_idx] = TokenIndex(merged_str,best_id) # replace the first token index with the merged one
-        deleteat!(tokens_indices, best_idx + 1)  # delete the second token index 
-        
-        n_tokens = length(tokens_indices)
-       
+        # Merge the consecutive pair (best_idx, best_idx+1) into new token best_id
+        tokens_indices[best_idx] = best_id
+        deleteat!(tokens_indices, best_idx + 1)
 
+        n_tokens -= 1  # Update the number of tokens after merge
     end
 
+    # Optionally add EOS token
     if EOS != 0
-        push!(tokens_indices, TokenIndex("", EOS))
+        push!(tokens_indices, EOS)
     end
 
-    # extract ids
-    ids = [token_index.id for token_index in tokens_indices] 
-    return ids
-
+    return tokens_indices
 end
