@@ -30,9 +30,6 @@ top-p sampling (or "nucleus sampling") samples from the smallest set of tokens t
 function sample_topp(sampler::Sampler, logits::Vector{Float32}, coin::Float32)::Int
     # cutoff probability for the top-p sampling
     cutoff = (1.f0 - sampler.topp) / (sampler.vocab_size - 1.f0)
-    # TODO: not needed I guess
-    # pre-allocate an array of ProbIndex structs to store the probabilities and indices
-    # sampler.probindex = Vector{ProbIndex}(undef, sampler.vocab_size)
     idx_good = 1
     @inbounds for idx in eachindex(logits)
         if logits[idx] >= cutoff
