@@ -233,3 +233,11 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
 
     println("")
 end
+
+function test_generate(;prompt="")
+    config, weights = read_checkpoint("./stories15M.bin")
+    sampler = Sampler(Int(config.vocab_size), 1.0f0, 0.9f0)
+    transformer = Transformer(config, weights)
+    tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
+    generate(transformer, tokenizer, sampler, 256; prompt=prompt)
+end
