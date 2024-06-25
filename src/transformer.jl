@@ -57,21 +57,10 @@ function safe_print(piece::String)
     print(piece)
 end
 
-
-# used for debugging
-function test_forward(token::Int; pos::Int=1)
-    # in run.c token = 1, pos = 0
-    # to reach same logits as in run.c, we need to set pos = 1
-    config, weights = read_checkpoint("stories15M.bin")
-    state = RunState(config)
-    logits = forward(config, weights, state, token, pos)
-    return logits
-end
-
 """
-    forward(transformer::Transformer, token::Int, pos::Int)
+    forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
 
-forward the transformer model with the input `token` at position `pos`.
+Forward pass of the transformer model with the input `token` at position `pos`.
 
 LlaMa2 was used as the architecure of the transformer model and it's modifications.
 The forward pass looks like the following:
@@ -105,18 +94,14 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
     # 1) forward through all layers
     for layer in 1:config.n_layers
         # a) attention RMSNorm
-        #TODO state.x is different when POSITION != 1 AND layer != 1, weights are correct
-
         rmsnorm!(state.xb, state.x, weights.rms_att_weight[layer,:]) 
 
         # b) linear projection to Q,K,V
-        # TODO q,k,v at layer = 1 are correct, at layer = 2 are not when POSITION != 1
         state.q = @view(weights.wq[layer,:,:]) * state.xb # (dim, dim) * (dim,) = (dim,)
         state.key_cache[layer, pos, :] = @views weights.wk[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
         state.value_cache[layer, pos, :] = @views weights.wv[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
 
         # c) RoPE relative positional encoding: complex-valued rotate q and k in each head
-        # TODO states are correct at layer = 1 regardless of POSITION
         for i in range(1, dim, step=2)
             head_dim = (i-1) % head_size
             freq = 1.0f0 / (10000.0f0^(head_dim/head_size))
@@ -139,11 +124,9 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
 
         # d) multihead attention
         for h in 0:config.n_heads-1 # iterate over all heads
-
             # get part of the query vector for this head
             h_offset = h*head_size
             q = @view(state.q[h_offset+1 : h_offset + head_size]) # +1 for Julia indexing, (head_size,)
-            # TODO at layer = 1, q is correct regardless of POSITION and h
             
             # attention vector for this head
             att = @view(state.att[h+1, :]) # (seq_len,) +1 for Julia indexing
@@ -163,7 +146,6 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
 
             # softmax the scores to get attention weights, from 0..pos inclusively
             softmax!(@view(att[begin:pos]))
-            # TODO att is correct at layer = 1 regardless of POSITION and h
 
             # weighted sum of the values, store back into xb
             state.xb[h_offset+1 : h_offset + head_size] .= 0.0f0
@@ -172,12 +154,6 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
                 v = @view(state.value_cache[layer, t, kv_offset+1 : kv_offset + head_size]) # (head_size,)
                 @. state.xb[h_offset+1 : h_offset + head_size] += v * att[t]
             end
-            #=
-            if layer == 1 && h == 0
-                println("state.xb at layer $layer and h $h is: ", state.xb[h_offset+1 : h_offset + 10])
-            end
-            =#
-
         end # end of head loop
 
         # matmul with wo and xb = attention = wo * (value * att_score)
@@ -201,17 +177,7 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
 
         # residual connection
         state.x += state.xb
-
-        # TODO state.x is different when POSITION != 1 even when LAYER = 1
-        #=
-        if layer == 1
-            println("The state.x at end of layer ", layer, " is: ", state.x[begin:10])
-        end
-        =#
-
     end # end of layer loop
-
-    #TODO println("state.x is: ", state.x[begin:10], "\n")
 
     # 2) RMSNorm
     rmsnorm!(state.x, state.x, weights.rms_final_weight)
@@ -238,19 +204,9 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     token = prompt_tokens[1]
     pos = 1 # Julia is 1 vs. C is 0
 
-    print("The prompt tokens are: ", prompt_tokens, "\n")
-
     while pos < steps
         # forward the transformer to get logits for the next token
         logits = forward(transformer, state, token, pos)
-
-        #=
-        println("The logits at position ", pos, " are: ", logits[begin:10], "\n")
-
-        if pos == 4
-            break
-        end
-        =#
 
         # advance the state machine
         if (pos < num_prompt_tokens)
@@ -276,12 +232,4 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     end
 
     println("")
-end
-
-function test_generate(;prompt="")
-    config, weights = read_checkpoint("./stories15M.bin")
-    sampler = Sampler(Int(config.vocab_size), 1.0f0, 0.9f0)
-    transformer = Transformer(config, weights)
-    tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
-    generate(transformer, tokenizer, sampler, 256; prompt=prompt)
 end
