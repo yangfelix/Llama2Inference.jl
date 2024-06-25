@@ -80,7 +80,9 @@ end
 #from id to str
 function decode(tokenizer::Tokenizer, prev_token::Int, token::Int, BOS::Int )
     token_str = find_token_str(tokenizer,token)
-   
+    if token_str == "<0x0A>"
+        token_str = "\n"
+    end
     # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
     if prev_token == BOS && token_str[1] == ' '
         token_str = token_str[2:end]   # example for me "text" -> "ext"
@@ -89,8 +91,9 @@ function decode(tokenizer::Tokenizer, prev_token::Int, token::Int, BOS::Int )
     # check for raw bytes tokens
     if startswith(token_str, "<") && endswith(token_str, ">")
         # remove '<' and '>' to gethexadecimal format 
-        hex_str = token_str[3:end-1]  # example for me "<0x01>" will be "x01"
         
+        hex_str = token_str[3:end-1]  # example for me "<0x01>" will be "x01"
+        print(hex_str)
         # Parse the hexadecimal string into a UInt8 byte
         byte_val = parse(UInt8, hex_str, base=16)
         
@@ -103,6 +106,7 @@ end
 # we split the encode function for "cleaner" code
 # TODO BOS and EOS should always map to the same id right? (BOS = 2, EOS = 3, corresponding to l. 454 in run.c) maybe make them to bools use the constants if needed
 function encode(tokenizer::Tokenizer, text::String, BOS::Int, EOS::Int)
+    
     sort_vocab!(tokenizer)   # Ensure tokenizer's vocabulary is sorted
     text_bytes = StringEncodings.encode(text, "utf-8")  # Convert text to bytes
 
