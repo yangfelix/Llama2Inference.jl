@@ -93,7 +93,6 @@ function decode(tokenizer::Tokenizer, prev_token::Int, token::Int, BOS::Int )
         # remove '<' and '>' to gethexadecimal format 
         
         hex_str = token_str[3:end-1]  # example for me "<0x01>" will be "x01"
-        print(hex_str)
         # Parse the hexadecimal string into a UInt8 byte
         byte_val = parse(UInt8, hex_str, base=16)
         
