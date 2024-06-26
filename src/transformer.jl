@@ -23,7 +23,7 @@ end
 Normalize `out` in place by the root mean square of `x` and multiply with `weight`.
 
 ```math
-out_i = \\frac{x_i}{RMS(x)} * weight_i, where RMS(x) = \\sqrt{\frac{1}{n} * \\sum_{i=1}^{n} x_i^2} + 1e-5}
+out_i = \\frac{x_i}{RMS(x)} * weight_i \\quad\\text{,where}\\quad RMS(x)= \\sqrt{ (\\frac{1}{n} * \\sum_{i=1}^{n} x_i^2) +1\\mathrm{e}{-5}} 
 ```
 1e-5 is added for numerical stability in the square root part.
 """
@@ -284,12 +284,4 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     end
 
     println("")
-end
-
-function test_generate(;prompt="")
-    config, weights = read_checkpoint("./stories15M.bin")
-    sampler = Sampler(Int(config.vocab_size), 1.0f0, 0.9f0)
-    transformer = Transformer(config, weights)
-    tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
-    generate(transformer, tokenizer, sampler, 256; prompt=prompt)
 end

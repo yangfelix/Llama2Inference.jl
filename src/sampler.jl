@@ -1,4 +1,3 @@
-#include("transformer.jl")
 using Random: rand
 
 struct ProbIndex
@@ -6,10 +5,6 @@ struct ProbIndex
     index::Int32
 end
 
-#= function ProbIndex(prob::Float32, index::Int)
-    return ProbIndex(prob, index)
-end =#
-# TODO change type of vocab_size to Int32 (Type of Config.vocab_size)
 mutable struct Sampler
     vocab_size::Int32
     temperature::Float32
@@ -22,6 +17,16 @@ mutable struct Sampler
     end
 end
 
+"""
+    Sampler(vocab_size::Int, temperature::Float32, topp::Float32)
+
+A struct to hold the parameters for sampling from a distribution.
+
+# Arguments
+- `vocab_size::Int`: The size of the vocabulary.
+- `temperature::Float32`: The temperature to apply to the logits before sampling.
+- `topp::Float32`: The probability mass to sample from the top-p distribution.
+"""
 function Sampler(vocab_size::Int, temperature::Float32, topp::Float32)
     vocab_size = Int32(vocab_size)
     return Sampler(vocab_size, temperature, topp)
@@ -73,7 +78,20 @@ function sample_topp(sampler::Sampler, logits::Vector{Float32}, coin::Float32)::
     return cumprob_view[end].index
 end
 
-function sample(sampler::Sampler, logits::Vector{Float32})::Int
+"""
+    sample(sampler::Sampler, logits::Vector{Float32})
+
+Sample from the `logits` using the `sampler`.
+
+# Example
+```julia-repl
+julia> sampler = Sampler(6, 0.0f0, 0.0f0)
+julia> logits = [0.1f0, 0.3f0, 0.2f0, 0.15f0, 0.15f0, 0.1f0]
+julia> sample(sampler, logits)
+2
+```
+"""
+function sample(sampler::Sampler, logits::Vector{Float32})
     sampler.vocab_size == length(logits) || throw(ArgumentError("logits length does not match vocab_size"))
     if sampler.temperature == 0.0f0
         return argmax(logits)
@@ -96,7 +114,7 @@ function sample(sampler::Sampler, logits::Vector{Float32})::Int
             # in case of rounding errors
             return sampler.vocab_size
         else
-            # top-p (nucleus) sampling, clamping least likely tokens to 0
+            # top-p (nucleus) sampling
             return sample_topp(sampler, logits, coin)
         end
     end
