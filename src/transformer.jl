@@ -21,8 +21,11 @@ end
     rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
 
 Normalize `out` in place by the root mean square of `x` and multiply with `weight`.
+
+```math
+out_i = \\frac{x_i}{RMS(x)} * weight_i, where RMS(x) = \\sqrt{\frac{1}{n} * \\sum_{i=1}^{n} x_i^2} + 1e-5}
+```
 1e-5 is added for numerical stability in the square root part.
-``\\LaTeX out_i = \\frac{x_i}{RMS(x)} * weight_i, where RMS(x) = \\sqrt{\frac{1}{n} * \\sum_{i=1}^{n} x_i^2} + 1e-5}``
 """
 function rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
     (size(out) == size(x) == size(weight)) || throw(DimensionMismatch("size(out) != size(x) != size(weight), $(size(out)) != $(size(x)) != $(size(weight))."))
@@ -36,7 +39,10 @@ end
     softmax!(x::AbstractArray{Float32,1})
 
 Softmax the values in `x` in place.
-``\\LaTeX x_i = \\frac{e^{x_i}}{\\sum_{j=1}^{n} e^{x_j}}``
+
+```math
+x_i = \\frac{e^{x_i}}{\\sum_{j=1}^{n} e^{x_j}}
+```
 """
 function softmax!(x::AbstractArray{Float32,1})
     # subtract the maximum value for numerical stability
@@ -63,19 +69,40 @@ end
 """
     forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
 
-Forward pass of the transformer model with the input `token` at position `pos`.
+Forward the `token` at position `pos` through the transformer model.
 
-LlaMa2 was used as the architecure of the transformer model and it's modifications.
-The forward pass looks like the following:
-  1) forward through all layers
-    a) RMSNorm
-    b) linear project x into Query, Key, Value with Wq, Wk, Wv
-    c) RoPE relative positional encoding
-    d) multihead attention
-    e) residual of x + RMSNorm
-    f) MLP with SwiGLU non-linearity
-  2) rmsnrom
-  3) classify into logits
+The foward pass corresponds to the LlaMa2 decoder architecture and is based on the C implementation by [Andrej Karpathy](https://github.com/karpathy/llama2.c/blob/master/run.c).
+
+# Arguments
+- `transformer::Transformer`: The transformer object containg config, weights and the token embedding table.
+- `state::RunState`: The state object to store the intermediate results during the forward pass.
+- `token::Int`: The token to forward through the transformer.
+- `pos::Int`: The position of the token in the sequence. The position is 1-based, which means the first position in a sequence is 1.
+
+# Example
+```julia-repl
+julia> config, weights = read_checkpoint("./stories15M.bin")
+julia> transformer = Transformer(config, weights)
+julia> tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
+julia> state = RunState(config)
+julia> token = 2
+julia> pos = 1
+julia> forward(transformer, state, token, pos)
+32000-element Vector{Float32}:
+ -6.790799
+  0.828116
+ -6.790441
+ -6.7904925
+ -6.7904897
+ -6.7906227
+  ⋮
+ -6.7905755
+ -6.7905526
+ -6.7907033
+ -6.790716
+ -6.7906933
+ -6.790564
+```
 """
 function forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
     #println("The token is: ", token, " and the position is: ", pos)
@@ -191,6 +218,28 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
     return state.logits
 end
 
+"""
+    generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="")
+
+Generate a sequence of tokens using the `transformer`.
+
+# Arguments
+- `transformer::Transformer`: The transformer object containg config and weights.
+- `tokenizer::Tokenizer`: The tokenizer object to encode and decode tokens.
+- `sampler::Sampler`: The sampler object to sample a token from the output logits.
+- `steps::Int`: The number of maximum tokens to generate.
+- `prompt::String`: The input text to start the generation. If none, the generation starts with an empty string.
+
+# Example
+```julia-repl
+julia> config, weights = read_checkpoint("./stories15M.bin")
+julia> transformer = Transformer(config, weights)
+julia> tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
+julia> sampler = Sampler(config.vocab_size, 0.0f0, 0.9f0)
+julia> generate(transformer, tokenizer, sampler, 23; prompt="The universe")
+The universe was bright and full of stars. Every night, the stars would twinkle and shine.
+```
+"""
 function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="")
     # start with the input text in prompt
     prompt_tokens = encode(tokenizer, prompt, 2, 0) # return Vector{Int} containing the ids (tokens?)
