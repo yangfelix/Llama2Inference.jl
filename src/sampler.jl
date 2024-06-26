@@ -3,7 +3,7 @@ using Random: rand
 
 struct ProbIndex
     prob::Float32
-    index::Int
+    index::Int32
 end
 
 #= function ProbIndex(prob::Float32, index::Int)
@@ -11,15 +11,20 @@ end
 end =#
 # TODO change type of vocab_size to Int32 (Type of Config.vocab_size)
 mutable struct Sampler
-    vocab_size::Int
+    vocab_size::Int32
     temperature::Float32
     topp::Float32
     probindex::Vector{ProbIndex} # only used with topp sampling
+
+    function Sampler(vocab_size::Int32, temperature::Float32, topp::Float32)
+        probindex = Vector{ProbIndex}(undef, vocab_size)
+        new(vocab_size, temperature, topp, probindex)
+    end
 end
 
 function Sampler(vocab_size::Int, temperature::Float32, topp::Float32)
-    probindex = Vector{ProbIndex}(undef, vocab_size)
-    return Sampler(vocab_size, temperature, topp, probindex)
+    vocab_size = Int32(vocab_size)
+    return Sampler(vocab_size, temperature, topp)
 end
 
 """
