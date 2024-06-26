@@ -18,24 +18,31 @@ function read_checkpoint(checkpoint::String)::Tuple{Config,TransformerWeights}#,
 end
 
 """
-    rmsnorm!(out::Array{T, 1}, x::Array{T,1}, weight::Array{T,1}) where T<:AbstractFloat
+    rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
 
-normalize `out` in place by the root mean square of `x` and multiply by the learned weights `weight`.
+Normalize `out` in place by the root mean square of `x` and multiply with `weight`.
+1e-5 is added for numerical stability in the square root part.
+```math
+out_i = \frac{x_i}{RMS(x)} * weight_i, where RMS(x) = \sqrt{\frac{1}{n} * \sum_{i=1}^{n} x_i^2} + 1e-5}
+```
 """
-function rmsnorm!(out::AbstractArray{T, 1}, x::AbstractArray{T,1}, weight::AbstractArray{T,1}) where T<:AbstractFloat
+function rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
     (size(out) == size(x) == size(weight)) || throw(DimensionMismatch("size(out) != size(x) != size(weight), $(size(out)) != $(size(x)) != $(size(weight))."))
     # calculate 1 / (the root mean square of the input)
-    rms = 1.0f0 / sqrt( (sum(x.^2) / length(x)) + 1e-5) # add 1e-8 for numerical stability
+    rms = 1.0f0 / sqrt( (sum(x.^2) / length(x)) + 1e-5) # add 1e-5 for numerical stability
     # multiply by the learned weight and normalize by 
     @. out = weight * x * rms
 end
 
 """
-    softmax!(x::T{T2,1}) where {T<:AbstractArray, T2<:AbstractFloat}
+    softmax!(x::AbstractArray{Float32,1})
 
-softmax the values in `x` in place, up to position `pos` inclusively.
+Softmax the values in `x` in place.
+````math
+x_i = \frac{e^{x_i}}{\sum_{j=1}^{n} e^{x_j}}
+```
 """
-function softmax!(x::AbstractArray{T2,1}) where T2<:AbstractFloat
+function softmax!(x::AbstractArray{Float32,1})
     # subtract the maximum value for numerical stability
     x .-= maximum(x)
     # exponentiate the values
