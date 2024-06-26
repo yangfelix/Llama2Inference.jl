@@ -23,7 +23,7 @@ end
 Normalize `out` in place by the root mean square of `x` and multiply with `weight`.
 1e-5 is added for numerical stability in the square root part.
 @doc raw"```math
-out_i = \frac{x_i}{RMS(x)} * weight_i, where RMS(x) = \sqrt{\frac{1}{n} * \sum_{i=1}^{n} x_i^2} + 1e-5}
+out_i = \frac{x_i}{RMS(x)} * weight_i, where RMS(x) = \\sqrt{\frac{1}{n} * \\sum_{i=1}^{n} x_i^2} + 1e-5}
 ```"
 """
 function rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
@@ -39,7 +39,7 @@ end
 
 Softmax the values in `x` in place.
 @doc raw"```math
-x_i = \frac{e^{x_i}}{\sum_{j=1}^{n} e^{x_j}}
+x_i = \frac{e^{x_i}}{\\sum_{j=1}^{n} e^{x_j}}
 ```"
 """
 function softmax!(x::AbstractArray{Float32,1})
