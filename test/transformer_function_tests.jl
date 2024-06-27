@@ -66,7 +66,6 @@ using DelimitedFiles
                 # The output of the forward function of the transformer.jl are compared with the values stored in empty_prompt_logits_first_iteration.csv
                 # To match the setup of the run.c file, the token is set to 1 and the pos is set to 1 (in the run.c file the token is 1 and the pos is 0)
                 # The difference in the pos is due to the 1-indexed based system in Julia
-                sampler = Sampler(Int(config.vocab_size), 1.f0, 0.9f0)
                 state = RunState(config)
                 token = 2
                 pos = 1

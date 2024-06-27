@@ -27,10 +27,10 @@ out_i = \\frac{x_i}{RMS(x)} * weight_i \\quad\\text{,where}\\quad RMS(x)= \\sqrt
 ```
 1e-5 is added for numerical stability in the square root part.
 """
-function rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
+function rmsnorm!(out::AbstractArray{T, 1}, x::AbstractArray{T,1}, weight::AbstractArray{T,1}) where T<:AbstractFloat
     (size(out) == size(x) == size(weight)) || throw(DimensionMismatch("size(out) != size(x) != size(weight), $(size(out)) != $(size(x)) != $(size(weight))."))
     # calculate 1 / (the root mean square of the input)
-    rms = 1.0f0 / sqrt( (sum(x.^2) / length(x)) + 1e-5) # add 1e-5 for numerical stability
+    rms = one(T) / sqrt( (sum(x.^2) / length(x)) + T(1e-5)) # add 1e-5 for numerical stability
     # multiply by the learned weight and normalize by 
     @. out = weight * x * rms
 end
@@ -44,13 +44,13 @@ Softmax the values in `x` in place.
 x_i = \\frac{e^{x_i}}{\\sum_{j=1}^{n} e^{x_j}}
 ```
 """
-function softmax!(x::AbstractArray{Float32,1})
+function softmax!(x::AbstractArray{T,1}) where T<:AbstractFloat
     # subtract the maximum value for numerical stability
-    x .-= maximum(x)
+    @. x -= $maximum(x)
     # exponentiate the values
-    x .= exp.(x)
+    @. x = exp(x)
     # normalize the values
-    x ./= sum(x)
+    @. x /= $sum(x)
 end
 
 function safe_print(piece::String)
@@ -72,6 +72,7 @@ end
 Forward the `token` at position `pos` through the transformer model.
 
 The foward pass corresponds to the LlaMa2 decoder architecture and is based on the C implementation by [Andrej Karpathy](https://github.com/karpathy/llama2.c/blob/master/run.c).
+The output is a logits vector of size `transformer.config.vocab_size`.
 
 # Arguments
 - `transformer::Transformer`: The transformer object containg config, weights and the token embedding table.
@@ -105,16 +106,12 @@ julia> forward(transformer, state, token, pos)
 ```
 """
 function forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
-    #println("The token is: ", token, " and the position is: ", pos)
-
+    # some convenience variables
     config = transformer.config
     weights = transformer.weights
-    # some convenience variables
     dim = config.dim
-    # integer multiplier of the kv sharing in (multiquery ?) GQA was used in LlaMa2 ...
-    # kv_mul = config.n_heads / config.n_kv_heads
+    # integer multiplier of the kv sharing in (multiquery ?) according to run.c by Andrej Karpathy
     group_size = config.n_heads ÷ config.n_kv_heads
-    hidden_dim = config.hidden_dim
     head_size = dim ÷ config.n_heads
     kv_dim =  head_size * config.n_kv_heads
 

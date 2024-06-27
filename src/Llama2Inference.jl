@@ -2,7 +2,6 @@ module Llama2Inference
 using StringEncodings
 using DataStructures
 using Mmap: mmap
-using Base.Iterators: partition
 using LinearAlgebra: dot
 
 include("Tokenizer.jl")
