@@ -69,14 +69,14 @@ using DelimitedFiles
                 state = RunState(config)
                 token = 2
                 pos = 1
-                logits = forward(transformer, state, token, pos)
+                forward!(transformer, state, token, pos)
                 expected_logits = readdlm("../empty_prompt_logits_first_iteration.csv", Float32)
-                @test maximum(abs.(logits - expected_logits)) < 1e-4
+                @test maximum(abs.(state.logits - expected_logits)) < 1e-4
             end
         end
-
+        
         @testset "generate test" begin
-            @testset "generate with token=1 (empty string token) and pos=1" begin
+            @testset "generate with prompt \"The universe\"" begin
                 # This test uses the run.c file from https://github.com/karpathy/llama2.c/blob/master/run.c
                 # The command
                 # ./run stories15M.bin -n 22 -t 0.0 -i "The universe"
@@ -88,7 +88,7 @@ using DelimitedFiles
                 # capturing output of genereate funtion
                 original_stdout = stdout
                 (rd, wr) = redirect_stdout()
-                generate(transformer, tokenizer, sampler, 23; prompt="The universe")
+                generate(transformer, tokenizer, sampler, 23; prompt="The universe", performance=false)
                 redirect_stdout(original_stdout)
                 close(wr)
                 output = read(rd, String)

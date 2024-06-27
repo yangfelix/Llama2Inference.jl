@@ -67,7 +67,20 @@ function safe_print(piece::String)
 end
 
 """
-    forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
+    mat_T_vec!(out::AbstractArray{T,1}, x::AbstractArray{T,1}, w::AbstractArray{T,2}) where T<:AbstractFloat
+
+Efficient transpose(matrix)-vector multiplication `out = w' * x`.
+"""
+function mat_T_vec!(out::AbstractArray{T,1}, x::AbstractArray{T,1}, w::AbstractArray{T,2}) where T<:AbstractFloat
+    # out = w' * x
+    # with w (n,d) x (n,) out (d,)
+    @inbounds for (i, col) in enumerate(eachcol(w))
+        out[i] = dot(col, x)
+    end
+end
+
+"""
+    forward!(transformer::Transformer, state::RunState, token::Int, pos::Int)
 
 Forward the `token` at position `pos` through the transformer model.
 
@@ -88,24 +101,21 @@ julia> tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
 julia> state = RunState(config)
 julia> token = 2
 julia> pos = 1
-julia> forward(transformer, state, token, pos)
+julia> forward!(transformer, state, token, pos)
+julia> state.logits
 32000-element Vector{Float32}:
- -6.790799
-  0.828116
- -6.790441
- -6.7904925
- -6.7904897
- -6.7906227
+ -6.7907834
+  0.82811606
+ -6.7904234
+ -6.790472
   ⋮
- -6.7905755
- -6.7905526
- -6.7907033
- -6.790716
- -6.7906933
- -6.790564
+ -6.79068
+ -6.790696
+ -6.7906737
+ -6.7905493
 ```
 """
-function forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
+function forward!(transformer::Transformer, state::RunState, token::Int, pos::Int)
     # some convenience variables
     config = transformer.config
     weights = transformer.weights
@@ -116,20 +126,20 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
     kv_dim =  head_size * config.n_kv_heads
 
     # copy token embedding into x
-    state.x = weights.token_embedding_table[token,:] # (dim,)
+    state.x = weights.token_embedding_table[:,token] # (dim,)
 
     # 1) forward through all layers
-    for layer in 1:config.n_layers
+    @inbounds for layer in 1:config.n_layers
         # a) attention RMSNorm
-        rmsnorm!(state.xb, state.x, weights.rms_att_weight[layer,:]) 
+        @views rmsnorm!(state.xb, state.x, weights.rms_att_weight[:,layer]) 
 
         # b) linear projection to Q,K,V
-        state.q = @view(weights.wq[layer,:,:]) * state.xb # (dim, dim) * (dim,) = (dim,)
-        state.key_cache[layer, pos, :] = @views weights.wk[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
-        state.value_cache[layer, pos, :] = @views weights.wv[layer,:,:] * state.xb # (kv_dim, dim) * (dim,) = (kv_dim,)
+        @views mat_T_vec!(state.q, state.xb, weights.wq[:, :, layer])  # wq (dim, dim) xb (dim,) -> q = wq' * xb
+        @views mat_T_vec!(state.key_cache[:, pos, layer], state.xb, weights.wk[:, :, layer]) # wk (dim, kv_dim) xb (dim,) -> key_cache (kv_dim, )
+        @views mat_T_vec!(state.value_cache[:, pos, layer], state.xb, weights.wv[:, :, layer]) # wv (dim, kv_dim) xb (dim,) -> value_cache (kv_dim, )
 
         # c) RoPE relative positional encoding: complex-valued rotate q and k in each head
-        for i in range(1, dim, step=2)
+        @inbounds for i in range(1, dim, step=2)
             head_dim = (i-1) % head_size
             freq = 1.0f0 / (10000.0f0^(head_dim/head_size))
             val = (pos-1) * freq # in our code pos is 1-based because of Julia indexing, here we need to subtract 1 to have correct calculations
@@ -142,15 +152,15 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
             state.q[i+1] = v0 * fci + v1 * fcr
 
             if i <= kv_dim
-                v0 = state.key_cache[layer, pos, i]
-                v1 = state.key_cache[layer, pos, i+1]
-                state.key_cache[layer, pos, i] = v0 * fcr - v1 * fci
-                state.key_cache[layer, pos, i+1] = v0 * fci + v1 * fcr
+                v0 = state.key_cache[i, pos, layer]
+                v1 = state.key_cache[i+1, pos, layer]
+                state.key_cache[i, pos, layer] = v0 * fcr - v1 * fci
+                state.key_cache[i+1, pos, layer] = v0 * fci + v1 * fcr
             end
         end
 
         # d) multihead attention
-        for h in 0:config.n_heads-1 # iterate over all heads
+        @inbounds for h in 0:config.n_heads-1 # iterate over all heads
             # get part of the query vector for this head
             h_offset = h*head_size
             q = @view(state.q[h_offset+1 : h_offset + head_size]) # +1 for Julia indexing, (head_size,)
@@ -164,9 +174,9 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
             kv_offset = group_number * head_size
 
             # iterate over all timestamps including the current one
-            for t in 1:pos
+            @inbounds for t in 1:pos
                 # get the key vector for this head and at this timestep
-                k = @view(state.key_cache[layer, t, kv_offset+1 : kv_offset + head_size]) # +1 for Julia indexing, (head_size,)
+                k = @view(state.key_cache[kv_offset+1 : kv_offset + head_size, t, layer]) # +1 for Julia indexing, (head_size,)
                 # update attention in place to the calculated 'similarity' score
                 att[t] = dot(q,k) / sqrt(Float32(head_size))
             end
@@ -176,31 +186,30 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
 
             # weighted sum of the values, store back into xb
             state.xb[h_offset+1 : h_offset + head_size] .= 0.0f0
-            for t in 1:pos
+            @inbounds for t in 1:pos
                 # get the value vector for this head and at this timestep
-                v = @view(state.value_cache[layer, t, kv_offset+1 : kv_offset + head_size]) # (head_size,)
+                v = @view(state.value_cache[kv_offset+1 : kv_offset + head_size, t, layer]) # (head_size,)
                 @. state.xb[h_offset+1 : h_offset + head_size] += v * att[t]
             end
         end # end of head loop
 
         # matmul with wo and xb = attention = wo * (value * att_score)
-        state.xb2 = weights.wo[layer,:,:] * state.xb
+        @views mat_T_vec!(state.xb2, state.xb, weights.wo[:, :, layer]) # wo (dim, dim) xb (dim,) -> xb2 = wo' * xb
 
         # e) residual connection back into x + RMSNorm
         state.x += state.xb2
-        rmsnorm!(state.xb, state.x, weights.rms_ffn_weight[layer,:])
+        @views rmsnorm!(state.xb, state.x, weights.rms_ffn_weight[:,layer])
 
         # f) MLP with SwiGLU non-linearity
         # self.w2(F.silu(self.w1(x)) * self.w3(x))
-        state.hb = @view(weights.w1[layer,:,:]) * state.xb # (hidden_dim, dim) * (dim,) = (hidden_dim,)
-        state.hb2 = @view(weights.w3[layer,:,:]) * state.xb # (hidden_dim, dim) * (dim,) = (hidden_dim,)
+        @views mat_T_vec!(state.hb, state.xb, weights.w1[:, :, layer]) # w1 (dim, hidden_dim) xb (dim,) -> hb = w1' * xb
+        @views mat_T_vec!(state.hb2, state.xb, weights.w3[:, :, layer]) # w3 (dim, hidden_dim) xb (dim,) -> hb2 = w3' * xb
 
         # SwiGLU non-linearity
-        # @. macro prepends . to all operations,
         @. state.hb *= (1.0f0 / (1.0f0 + exp(-state.hb))) * state.hb2
 
         # final matul to get output of MLP
-        state.xb = @view(weights.w2[layer,:,:]) * state.hb # (dim, hidden_dim) * (hidden_dim,) = (dim,)
+        @views mat_T_vec!(state.xb, state.hb, weights.w2[:, :, layer]) # w2 (hidden_dim, dim) hb (dim) -> xb = w2' * hb
 
         # residual connection
         state.x += state.xb
@@ -210,13 +219,11 @@ function forward(transformer::Transformer, state::RunState, token::Int, pos::Int
     rmsnorm!(state.x, state.x, weights.rms_final_weight)
 
     # 3) classify into logits
-    state.logits = weights.wcls * state.x # (vocab_size, dim) * (dim,) = (vocab_size,)
-    
-    return state.logits
+    mat_T_vec!(state.logits, state.x, weights.wcls) # wcls (dim, vocab_size) x (dim,) -> logits = wcls' * x
 end
 
 """
-    generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="")
+    generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="", performance=true)
 
 Generate a sequence of tokens using the `transformer`.
 
@@ -224,8 +231,9 @@ Generate a sequence of tokens using the `transformer`.
 - `transformer::Transformer`: The transformer object containg config and weights.
 - `tokenizer::Tokenizer`: The tokenizer object to encode and decode tokens.
 - `sampler::Sampler`: The sampler object to sample a token from the output logits.
-- `steps::Int`: The number of maximum tokens to generate.
+- `steps::Int`: The number of maximum tokens to generate, upper bound by `transformer.config.seq_len`.
 - `prompt::String`: The input text to start the generation. If none, the generation starts with an empty string.
+- `performance::Bool`: If true, print the number of generated tokens and number of tokens generated per second.
 
 # Example
 ```julia-repl
@@ -233,11 +241,16 @@ julia> config, weights = read_checkpoint("./stories15M.bin")
 julia> transformer = Transformer(config, weights)
 julia> tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
 julia> sampler = Sampler(config.vocab_size, 0.0f0, 0.9f0)
-julia> generate(transformer, tokenizer, sampler, 23; prompt="The universe")
+julia> generate(transformer, tokenizer, sampler, 23; prompt="The universe", performance=true)
 The universe was bright and full of stars. Every night, the stars would twinkle and shine.
 ```
 """
-function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="")
+function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="", performance=true)
+    # check if the number of steps is valid
+    if steps < 1 || steps > transformer.config.seq_len
+        steps = transformer.config.seq_len
+    end
+    
     # start with the input text in prompt
     prompt_tokens = encode(tokenizer, prompt, 2, 0) # return Vector{Int} containing the ids (tokens?)
     num_prompt_tokens = length(prompt_tokens)
@@ -249,13 +262,14 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     state = RunState(transformer.config)
 
     # start the main loop
+    start = 0.
     next = nothing
     token = prompt_tokens[1]
     pos = 1 # Julia is 1 vs. C is 0
 
     while pos < steps
         # forward the transformer to get logits for the next token
-        logits = forward(transformer, state, token, pos)
+        forward!(transformer, state, token, pos)
 
         # advance the state machine
         if (pos < num_prompt_tokens)
@@ -263,7 +277,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
             next = prompt_tokens[pos + 1]
         else
             # otherwise sample the next token from the logits
-            next = sample(sampler, logits)
+            next = sample(sampler, state.logits)
         end
         pos += 1
 
@@ -278,7 +292,16 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
         safe_print(piece) # same as printf("%s", piece), but skips "unsafe" bytes
         #print("\n")
         token = next
+
+        if start == 0.
+            start = time()
+        end
     end
 
     println("")
+
+    if performance && pos > 2
+        elapsed = time() - start
+        println("Generated $(pos-1) tokens in $(elapsed) seconds, $(pos/elapsed) tokens per second.")
+    end
 end

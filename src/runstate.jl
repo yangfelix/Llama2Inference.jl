@@ -13,9 +13,9 @@ mutable struct RunState{T<:AbstractFloat}
     # corresponding to line 86 in run.c the actual dimensionality of key-cache is (layer, seq, kv_dim)
     # s->key_cache = calloc(p->n_layers * p->seq_len * kv_dim, sizeof(float));
     # in the calloc function kv_dim is used instead of dim like in the dimensionality describtion
-    key_cache::Array{T,3} # (layer, seq_len, kv_dim)
+    key_cache::Array{T,3} # (kv_dim, seq_len, layer)
     # same for value_cache in line 87
-    value_cache::Array{T,3} # (layer, seq_len, kv_dim)
+    value_cache::Array{T,3} # (kv_dim, seq_len, layer)
 end
 
 """
@@ -38,7 +38,7 @@ function RunState(config::Config; T::Type{<:AbstractFloat} = Float32)
         zeros(T, config.dim),
         zeros(T, (config.n_heads, config.seq_len)),
         zeros(T, config.vocab_size),
-        zeros(T, (config.n_layers, config.seq_len, kv_dim)),
-        zeros(T, (config.n_layers, config.seq_len, kv_dim))
+        zeros(T, (kv_dim, config.seq_len, config.n_layers)),
+        zeros(T, (kv_dim, config.seq_len, config.n_layers))
     )
 end

@@ -59,20 +59,20 @@ end
     shared_weights::Int32 = 1
     tfweights = memory_map_weights(config, weights, shared_weights)
     # test dimensions
-    @test size(tfweights.token_embedding_table) == (vocab_size, dim)
-    @test size(tfweights.rms_att_weight) == (n_layers, dim)
-    @test size(tfweights.wq) == (n_layers, dim, n_heads * head_size)
-    @test size(tfweights.wk) == (n_layers, n_kv_heads * head_size, dim)
-    @test size(tfweights.wv) == (n_layers, n_kv_heads * head_size, dim)
-    @test size(tfweights.wo) == (n_layers, n_heads * head_size, dim)
-    @test size(tfweights.rms_ffn_weight) == (n_layers, dim)
-    @test size(tfweights.w1) == (n_layers, hidden_dim, dim)
-    @test size(tfweights.w2) == (n_layers, dim, hidden_dim)
-    @test size(tfweights.w3) == (n_layers, hidden_dim, dim)
+    @test size(tfweights.token_embedding_table) == (dim, vocab_size)
+    @test size(tfweights.rms_att_weight) == (dim, n_layers)
+    @test size(tfweights.wq) == (dim, n_heads * head_size, n_layers)
+    @test size(tfweights.wk) == (dim, n_kv_heads * head_size, n_layers)
+    @test size(tfweights.wv) == (dim, n_kv_heads * head_size, n_layers)
+    @test size(tfweights.wo) == (dim, n_heads * head_size, n_layers)
+    @test size(tfweights.rms_ffn_weight) == (dim, n_layers)
+    @test size(tfweights.w1) == (dim, hidden_dim, n_layers)
+    @test size(tfweights.w2) == (hidden_dim, dim, n_layers)
+    @test size(tfweights.w3) == (dim, hidden_dim, n_layers)
     @test size(tfweights.rms_final_weight) == (dim,)
-    @test size(tfweights.wcls) == (vocab_size, dim)
+    @test size(tfweights.wcls) == (dim, vocab_size)
     # test correct values
-    """
+    
     @test reshape(tfweights.token_embedding_table, 128) == weights[1:128]
     @test reshape(tfweights.rms_att_weight, 64) == weights[129:192]
     @test reshape(tfweights.wq, 1024) == weights[193:1216]
@@ -93,5 +93,5 @@ end
     @test weights[end] == -1
     @test tfweights.token_embedding_table[begin] == weights[begin]
     @test tfweights.rms_final_weight[end] == weights[end]
-    """
+    
 end

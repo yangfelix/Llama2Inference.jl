@@ -78,18 +78,18 @@ function memory_map_weights(
     wcls = shared_weights == 0 ? split_weights[end] : split_weights[begin]
 
     # permutation of dimensions is needed to match the original order of dimensions
-    token_embedding_table = permutedims(token_embedding_table)
-    rms_att_weight = permutedims(split_weights[2])
-    wq = permutedims(split_weights[3], (3,2,1))
-    wk = permutedims(split_weights[4], (3,2,1))
-    wv = permutedims(split_weights[5], (3,2,1))
-    wo = permutedims(split_weights[6], (3,2,1))
-    rms_ffn_weight = permutedims(split_weights[7])
-    w1 = permutedims(split_weights[8], (3,2,1))
-    w2 = permutedims(split_weights[9], (3,2,1))
-    w3 = permutedims(split_weights[10], (3,2,1))
+    token_embedding_table = token_embedding_table
+    rms_att_weight = split_weights[2]
+    wq = split_weights[3]
+    wk = split_weights[4]
+    wv = split_weights[5]
+    wo = split_weights[6]
+    rms_ffn_weight = split_weights[7]
+    w1 = split_weights[8]
+    w2 = split_weights[9]
+    w3 = split_weights[10]
     rms_final_weight = split_weights[11]
-    wcls = permutedims(wcls)
+    wcls = wcls
 
     return TransformerWeights(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight, wcls)
 end
