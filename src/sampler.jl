@@ -20,7 +20,7 @@ end
 """
     Sampler(vocab_size::Int, temperature::Float32, topp::Float32)
 
-A struct to hold the parameters for sampling from a distribution.
+Create a sampler object with the given parameters, used for sampling from a distribution.
 
 # Arguments
 - `vocab_size::Int`: The size of the vocabulary.

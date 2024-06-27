@@ -80,7 +80,7 @@ function mat_T_vec!(out::AbstractArray{T,1}, x::AbstractArray{T,1}, w::AbstractA
 end
 
 """
-    forward(transformer::Transformer, state::RunState, token::Int, pos::Int)
+    forward!(transformer::Transformer, state::RunState, token::Int, pos::Int)
 
 Forward the `token` at position `pos` through the transformer model.
 
@@ -104,19 +104,15 @@ julia> pos = 1
 julia> forward!(transformer, state, token, pos)
 julia> state.logits
 32000-element Vector{Float32}:
- -6.790799
-  0.828116
- -6.790441
- -6.7904925
- -6.7904897
- -6.7906227
+ -6.7907834
+  0.82811606
+ -6.7904234
+ -6.790472
   ⋮
- -6.7905755
- -6.7905526
- -6.7907033
- -6.790716
- -6.7906933
- -6.790564
+ -6.79068
+ -6.790696
+ -6.7906737
+ -6.7905493
 ```
 """
 function forward!(transformer::Transformer, state::RunState, token::Int, pos::Int)
@@ -227,7 +223,7 @@ function forward!(transformer::Transformer, state::RunState, token::Int, pos::In
 end
 
 """
-    generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="")
+    generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="", performance=true)
 
 Generate a sequence of tokens using the `transformer`.
 
@@ -237,6 +233,7 @@ Generate a sequence of tokens using the `transformer`.
 - `sampler::Sampler`: The sampler object to sample a token from the output logits.
 - `steps::Int`: The number of maximum tokens to generate, upper bound by `transformer.config.seq_len`.
 - `prompt::String`: The input text to start the generation. If none, the generation starts with an empty string.
+- `performance::Bool`: If true, print the number of generated tokens and number of tokens generated per second.
 
 # Example
 ```julia-repl
@@ -248,7 +245,7 @@ julia> generate(transformer, tokenizer, sampler, 23; prompt="The universe", perf
 The universe was bright and full of stars. Every night, the stars would twinkle and shine.
 ```
 """
-function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="", performance=false)
+function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampler, steps::Int; prompt::String="", performance=true)
     # check if the number of steps is valid
     if steps < 1 || steps > transformer.config.seq_len
         steps = transformer.config.seq_len
