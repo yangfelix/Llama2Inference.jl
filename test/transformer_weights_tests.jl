@@ -72,7 +72,7 @@ end
     @test size(tfweights.rms_final_weight) == (dim,)
     @test size(tfweights.wcls) == (dim, vocab_size)
     # test correct values
-    """
+    
     @test reshape(tfweights.token_embedding_table, 128) == weights[1:128]
     @test reshape(tfweights.rms_att_weight, 64) == weights[129:192]
     @test reshape(tfweights.wq, 1024) == weights[193:1216]
@@ -93,5 +93,5 @@ end
     @test weights[end] == -1
     @test tfweights.token_embedding_table[begin] == weights[begin]
     @test tfweights.rms_final_weight[end] == weights[end]
-    """
+    
 end
