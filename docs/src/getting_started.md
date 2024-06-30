@@ -15,7 +15,7 @@ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 * Additionally, you will need to download the `tokenizer.bin` file from the GitHub repository.
 
 ## Setup
-* Navigate to the directory where downloaded the weights.
+* Navigate to the directory where you downloaded the weights.
 ```
 julia
 using Pkg
