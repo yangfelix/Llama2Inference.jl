@@ -134,7 +134,8 @@ function find_token_id(tokenizer::Tokenizer, token_str::String)
 end
 
 """
-   function find_token_str(tokenizer::Tokenizer, token_id::Int)
+   find_token_str(tokenizer::Tokenizer, token_id::Int)
+   
 Finds and returns the token string coressponding to a given token ID from `sort_vocab`
 
 # Arguments
