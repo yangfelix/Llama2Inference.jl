@@ -20,11 +20,12 @@ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 using Pkg
 Pkg.activate("Llama2Inference")
 Pkg.add(url="https://github.com/yangfelix/Llama2Inference.jl")
-using Llama2Inference
+
 ```
 
 ## Generating a random Story
 ```@repl
+using Llama2Inference
 config, weights = read_checkpoint("./stories15M.bin");
 transformer = Transformer(config, weights);
 tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size));
@@ -34,6 +35,7 @@ generate(transformer, tokenizer, sampler, 256; prompt="The universe")
 
 ## Generating a deterministic Story
 ```@repl
+using Llama2Inference
 config, weights = read_checkpoint("./stories15M.bin");
 transformer = Transformer(config, weights);
 tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size));
