@@ -4,8 +4,8 @@ using Llama2Inference
 ## Andrejs tests that work for run.c
 @testset "Encoder Tests" begin
     vocab_size = 32000
-    BOS::Int = 2
-    EOS::Int = 0
+    BOS::Bool = true
+    EOS::Bool = false
     tokenizer_path = "../tokenizer.bin"
     tokenizer = build_tokenizer(tokenizer_path,vocab_size)
     sv = sort_vocab!(tokenizer)

@@ -79,7 +79,8 @@ end
 
 #from id to str
 #from id to str
-function decode(tokenizer::Tokenizer, prev_token::Int, token::Int, BOS::Int )
+function decode(tokenizer::Tokenizer, prev_token::Int)
+    BOS = 2
     token_str = find_token_str(tokenizer,token)
    
     # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)

@@ -15,8 +15,9 @@ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 * Additionally, you will need to download the `tokenizer.bin` file from the GitHub repository.
 
 ## Setup
-
-```@repl
+* Navigate to the directory where downloaded the weights.
+```
+julia
 using Pkg
 Pkg.activate("Llama2Inference")
 Pkg.add(url="https://github.com/yangfelix/Llama2Inference.jl")
