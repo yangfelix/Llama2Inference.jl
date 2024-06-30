@@ -72,7 +72,7 @@ end
     @test size(tfweights.rms_final_weight) == (dim,)
     @test size(tfweights.wcls) == (dim, vocab_size)
     # test correct values
-    
+
     @test reshape(tfweights.token_embedding_table, 128) == weights[1:128]
     @test reshape(tfweights.rms_att_weight, 64) == weights[129:192]
     @test reshape(tfweights.wq, 1024) == weights[193:1216]
@@ -85,7 +85,7 @@ end
     @test reshape(tfweights.w3, 128) == weights[6657:6784]
     @test reshape(tfweights.rms_final_weight, 16) == weights[6785:6800]
     @test reshape(tfweights.wcls, 128) == weights[1:128]
-    
+
     # test that views are returned
     weights[begin] = 0
     weights[end] = -1
@@ -93,5 +93,41 @@ end
     @test weights[end] == -1
     @test tfweights.token_embedding_table[begin] == weights[begin]
     @test tfweights.rms_final_weight[end] == weights[end]
-    
+
+end
+
+@testset "transformer_weights_constructor_test" begin
+    dim = 16
+    hidden_dim = 2
+    n_layers = 4
+    n_heads = 4
+    n_kv_heads = 8
+    vocab_size = 8
+    head_size = div(dim, n_heads) # 4
+    seq_len = 0
+    token_embedding_table = zeros(16, 8)
+    rms_att_weight = zeros(16, 4)
+    wq = zeros(16, 16, 4)
+    wk = zeros(16, 32, 4)
+    wv = zeros(16, 32, 4)
+    wo = zeros(16, 16, 4)
+    rms_ffn_weight = zeros(16, 4)
+    w1 = zeros(16, 2, 4)
+    w2 = zeros(2, 16, 4)
+    w3 = zeros(16, 2, 4)
+    rms_final_weight = zeros(16)
+    wcls = zeros(16, 8)
+    @test TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight, wcls) isa TransformerWeights{Float64}
+    wq_wrong_dim = zeros(17, 16, 4)
+    @test_throws ArgumentError TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq_wrong_dim, wk, wv, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight, wcls)
+    rms_final_weight_wrong_dim = zeros(32)
+    @test_throws ArgumentError TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight_wrong_dim, wcls)
+    wcls_wrong_vocab_size = zeros(16, 7)
+    @test_throws ArgumentError TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight, wcls_wrong_vocab_size)
+    rms_ffn_weight_wrong_n_layers = zeros(16, 8)
+    @test_throws ArgumentError TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight_wrong_n_layers, w1, w2, w3, rms_final_weight, wcls)
+    w2_wrong_hidden_dim = zeros(16, 2, 4)
+    @test_throws ArgumentError TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq, wk, wv, wo, rms_ffn_weight, w1, w2_wrong_hidden_dim, w3, rms_final_weight, wcls)
+    wv_wrong_n_kv_heads = zeros(16, 16, 4)
+    @test_throws ArgumentError TransformerWeights{Float64}(token_embedding_table, rms_att_weight, wq, wk, wv_wrong_n_kv_heads, wo, rms_ffn_weight, w1, w2, w3, rms_final_weight, wcls)
 end
