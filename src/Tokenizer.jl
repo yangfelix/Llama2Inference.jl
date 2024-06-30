@@ -51,7 +51,6 @@ Constructs a `Tokenizer` from a file.
 4. Closing file
 5. Returning `Tokenizer` with necessary data
 """
-
 function build_tokenizer(filepath::String, vocab_size::Int)
     vocab = Vector{String}(undef, vocab_size)
     vocab_scores = Vector{Float32}(undef, vocab_size)
@@ -90,7 +89,6 @@ Sorts the vocabulary of the given `Tokenizer`, storing unique tokens and sorting
 3. Identification of unique tokens.
 4. Sorting the vocabulary.
 """
-
 function sort_vocab!(tokenizer::Tokenizer)
    
     if isnothing(tokenizer.sorted_vocab) || isempty(tokenizer.sorted_vocab)
@@ -126,7 +124,6 @@ Finds and returns the ID of a given token string in the `sorted_vocab`.
 # Description
 Iterates over the `sorted_vocab` to find the token string and return its ID.
 """
-
 function find_token_id(tokenizer::Tokenizer, token_str::String)
     for token_index in tokenizer.sorted_vocab
         if token_index.str == token_str
@@ -150,7 +147,6 @@ Finds and returns the token string coressponding to a given token ID from `sort_
 # Description
 Iterates over the `sorted_vocab` to find the token ID and return its corresponding string.
 """
-
 function find_token_str(tokenizer::Tokenizer, token_id::Int)
     for token_index in tokenizer.sorted_vocab
         if token_index.id == token_id
@@ -179,8 +175,6 @@ Decodes a token ID into its corresponding token string representation or byte va
 3. Checks for raw byte tokens and parses them if applicable.
 4. Returns the token string or its byte value representation.
 """
-
-
 function decode(tokenizer::Tokenizer, prev_token::Int,token::Int)
     BOS = 2
     token_str = find_token_str(tokenizer,token)
@@ -234,7 +228,6 @@ Encodes the input text into a sequence of token IDs using the provided `Tokenize
 8. Optionally adds the EOS token.
 9. Returns the vector `tokens_indices` representing the encoded input text.
 """
-
 function encode(tokenizer::Tokenizer, text::String, use_bos::Bool, use_eos::Bool)
     
     sort_vocab!(tokenizer)   # Ensure tokenizer's vocabulary is sorted
