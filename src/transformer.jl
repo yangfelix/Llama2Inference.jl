@@ -252,7 +252,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     end
     
     # start with the input text in prompt
-    prompt_tokens = encode(tokenizer, prompt, 2, 0) # return Vector{Int} containing the ids (tokens?)
+    prompt_tokens = encode(tokenizer, prompt, true,false) # return Vector{Int} containing the ids (tokens?)
     num_prompt_tokens = length(prompt_tokens)
     if num_prompt_tokens < 1
         throw(error("length of prompt_tokens is $(num_prompt_tokens)!"))
@@ -287,7 +287,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
         end
 
         # print the token as string, decode it with the Tokenizer object
-        piece = decode(tokenizer, token, next, 2)
+        piece = decode(tokenizer, token, next)
         #print("Type of Token is ", typeof(piece), " length of token = ", length(piece), " ")
         safe_print(piece) # same as printf("%s", piece), but skips "unsafe" bytes
         #print("\n")
