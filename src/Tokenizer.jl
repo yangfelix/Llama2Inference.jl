@@ -78,10 +78,13 @@ function find_token_str(tokenizer::Tokenizer, token_id::Int)
 end
 
 #from id to str
-#from id to str
-function decode(tokenizer::Tokenizer, prev_token::Int)
+function decode(tokenizer::Tokenizer, prev_token::Int,token::Int)
     BOS = 2
     token_str = find_token_str(tokenizer,token)
+
+    if token_str == "<0x0A>"
+        token_str = "\n"
+    end
    
     # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
     if prev_token == BOS && token_str[1] == ' '
