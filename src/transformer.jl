@@ -1,19 +1,30 @@
+"""
+Transformer struct which contains the fields
+- config::[`Config`](@ref)
+- weights::[`TransformerWeights`](@ref)
+"""
 struct Transformer
     config::Config
     weights::TransformerWeights
 end
 
-function read_checkpoint(checkpoint::String)::Tuple{Config,TransformerWeights}#, config::Config, weights::TransformerWeights, fd::Int, data::Array{float}, file_size::Int)
+"""
+    read_checkpoint(checkpoint::String, T_weights::Type=Float32, T_config::Type=Int32)::Tuple{Config{T_config},TransformerWeights{T_weights}}
+
+Reads the config and weights from the file at `checkpoint`.
+"""
+function read_checkpoint(checkpoint::String, T_weights::Type=Float32, T_config::Type=Int32)::Tuple{Config{T_config},TransformerWeights{T_weights}}
     filesize = stat(checkpoint).size
     config, weights = open(checkpoint, "r") do file
-        config = read_config(Int32, file)
-        weights_size = div(filesize - sizeof(config), sizeof(Float32))
-        weights = mmap(file, Vector{Float32}, weights_size)
+        config = read_config(T_config, file)
+        weights_size = div(filesize - sizeof(config), sizeof(T_weights))
+        weights = mmap(file, Vector{T_weights}, weights_size)
         return config, weights
     end
     shared_weights::Int32 = config.vocab_size > 0 ? 1 : 0
     config = set_config_vocab_size(config, abs(config.vocab_size))
     transformer_weights = memory_map_weights(config, weights, shared_weights)
+
     return config, transformer_weights
 end
 
@@ -27,10 +38,10 @@ out_i = \\frac{x_i}{RMS(x)} * weight_i \\quad\\text{,where}\\quad RMS(x)= \\sqrt
 ```
 1e-5 is added for numerical stability in the square root part.
 """
-function rmsnorm!(out::AbstractArray{T, 1}, x::AbstractArray{T,1}, weight::AbstractArray{T,1}) where T<:AbstractFloat
+function rmsnorm!(out::AbstractArray{T,1}, x::AbstractArray{T,1}, weight::AbstractArray{T,1}) where {T<:AbstractFloat}
     (size(out) == size(x) == size(weight)) || throw(DimensionMismatch("size(out) != size(x) != size(weight), $(size(out)) != $(size(x)) != $(size(weight))."))
     # calculate 1 / (the root mean square of the input)
-    rms = one(T) / sqrt( (sum(x.^2) / length(x)) + T(1e-5)) # add 1e-5 for numerical stability
+    rms = one(T) / sqrt((dot(x, x) / length(x)) + T(1e-5)) # add 1e-5 for numerical stability
     # multiply by the learned weight and normalize by 
     @. out = weight * x * rms
 end
@@ -44,7 +55,7 @@ Softmax the values in `x` in place.
 x_i = \\frac{e^{x_i}}{\\sum_{j=1}^{n} e^{x_j}}
 ```
 """
-function softmax!(x::AbstractArray{T,1}) where T<:AbstractFloat
+function softmax!(x::AbstractArray{T,1}) where {T<:AbstractFloat}
     # subtract the maximum value for numerical stability
     @. x -= $maximum(x)
     # exponentiate the values
@@ -71,7 +82,7 @@ end
 
 Efficient transpose(matrix)-vector multiplication `out = w' * x`.
 """
-function mat_T_vec!(out::AbstractArray{T,1}, x::AbstractArray{T,1}, w::AbstractArray{T,2}) where T<:AbstractFloat
+function mat_T_vec!(out::AbstractArray{T,1}, x::AbstractArray{T,1}, w::AbstractArray{T,2}) where {T<:AbstractFloat}
     # out = w' * x
     # with w (n,d) x (n,) out (d,)
     @inbounds for (i, col) in enumerate(eachcol(w))
@@ -123,15 +134,15 @@ function forward!(transformer::Transformer, state::RunState, token::Int, pos::In
     # integer multiplier of the kv sharing in (multiquery ?) according to run.c by Andrej Karpathy
     group_size = config.n_heads ÷ config.n_kv_heads
     head_size = dim ÷ config.n_heads
-    kv_dim =  head_size * config.n_kv_heads
+    kv_dim = head_size * config.n_kv_heads
 
     # copy token embedding into x
-    state.x = weights.token_embedding_table[:,token] # (dim,)
+    state.x = weights.token_embedding_table[:, token] # (dim,)
 
     # 1) forward through all layers
     @inbounds for layer in 1:config.n_layers
         # a) attention RMSNorm
-        @views rmsnorm!(state.xb, state.x, weights.rms_att_weight[:,layer]) 
+        @views rmsnorm!(state.xb, state.x, weights.rms_att_weight[:, layer])
 
         # b) linear projection to Q,K,V
         @views mat_T_vec!(state.q, state.xb, weights.wq[:, :, layer])  # wq (dim, dim) xb (dim,) -> q = wq' * xb
@@ -140,9 +151,9 @@ function forward!(transformer::Transformer, state::RunState, token::Int, pos::In
 
         # c) RoPE relative positional encoding: complex-valued rotate q and k in each head
         @inbounds for i in range(1, dim, step=2)
-            head_dim = (i-1) % head_size
-            freq = 1.0f0 / (10000.0f0^(head_dim/head_size))
-            val = (pos-1) * freq # in our code pos is 1-based because of Julia indexing, here we need to subtract 1 to have correct calculations
+            head_dim = (i - 1) % head_size
+            freq = 1.0f0 / (10000.0f0^(head_dim / head_size))
+            val = (pos - 1) * freq # in our code pos is 1-based because of Julia indexing, here we need to subtract 1 to have correct calculations
             fcr = cos(val)
             fci = sin(val)
 
@@ -162,9 +173,9 @@ function forward!(transformer::Transformer, state::RunState, token::Int, pos::In
         # d) multihead attention
         @inbounds for h in 0:config.n_heads-1 # iterate over all heads
             # get part of the query vector for this head
-            h_offset = h*head_size
-            q = @view(state.q[h_offset+1 : h_offset + head_size]) # +1 for Julia indexing, (head_size,)
-            
+            h_offset = h * head_size
+            q = @view(state.q[h_offset+1:h_offset+head_size]) # +1 for Julia indexing, (head_size,)
+
             # attention vector for this head
             att = @view(state.att[h+1, :]) # (seq_len,) +1 for Julia indexing
 
@@ -176,20 +187,20 @@ function forward!(transformer::Transformer, state::RunState, token::Int, pos::In
             # iterate over all timestamps including the current one
             @inbounds for t in 1:pos
                 # get the key vector for this head and at this timestep
-                k = @view(state.key_cache[kv_offset+1 : kv_offset + head_size, t, layer]) # +1 for Julia indexing, (head_size,)
+                k = @view(state.key_cache[kv_offset+1:kv_offset+head_size, t, layer]) # +1 for Julia indexing, (head_size,)
                 # update attention in place to the calculated 'similarity' score
-                att[t] = dot(q,k) / sqrt(Float32(head_size))
+                att[t] = dot(q, k) / sqrt(Float32(head_size))
             end
 
             # softmax the scores to get attention weights, from 0..pos inclusively
             softmax!(@view(att[begin:pos]))
 
             # weighted sum of the values, store back into xb
-            state.xb[h_offset+1 : h_offset + head_size] .= 0.0f0
+            state.xb[h_offset+1:h_offset+head_size] .= 0.0f0
             @inbounds for t in 1:pos
                 # get the value vector for this head and at this timestep
-                v = @view(state.value_cache[kv_offset+1 : kv_offset + head_size, t, layer]) # (head_size,)
-                @. state.xb[h_offset+1 : h_offset + head_size] += v * att[t]
+                v = @view(state.value_cache[kv_offset+1:kv_offset+head_size, t, layer]) # (head_size,)
+                @. state.xb[h_offset+1:h_offset+head_size] += v * att[t]
             end
         end # end of head loop
 
@@ -198,7 +209,7 @@ function forward!(transformer::Transformer, state::RunState, token::Int, pos::In
 
         # e) residual connection back into x + RMSNorm
         state.x += state.xb2
-        @views rmsnorm!(state.xb, state.x, weights.rms_ffn_weight[:,layer])
+        @views rmsnorm!(state.xb, state.x, weights.rms_ffn_weight[:, layer])
 
         # f) MLP with SwiGLU non-linearity
         # self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -250,7 +261,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     if steps < 1 || steps > transformer.config.seq_len
         steps = transformer.config.seq_len
     end
-    
+
     # start with the input text in prompt
     prompt_tokens = encode(tokenizer, prompt, 2, 0) # return Vector{Int} containing the ids (tokens?)
     num_prompt_tokens = length(prompt_tokens)
@@ -262,7 +273,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
     state = RunState(transformer.config)
 
     # start the main loop
-    start = 0.
+    start = 0.0
     next = nothing
     token = prompt_tokens[1]
     pos = 1 # Julia is 1 vs. C is 0
@@ -274,7 +285,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
         # advance the state machine
         if (pos < num_prompt_tokens)
             # if we are still processing the input prompt, force the next prompt token
-            next = prompt_tokens[pos + 1]
+            next = prompt_tokens[pos+1]
         else
             # otherwise sample the next token from the logits
             next = sample(sampler, state.logits)
@@ -293,7 +304,7 @@ function generate(transformer::Transformer, tokenizer::Tokenizer, sampler::Sampl
         #print("\n")
         token = next
 
-        if start == 0.
+        if start == 0.0
             start = time()
         end
     end
