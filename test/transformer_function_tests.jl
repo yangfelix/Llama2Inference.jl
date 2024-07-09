@@ -53,10 +53,8 @@ using DelimitedFiles
     end
     @testset "Transformer Tests" begin
         # transformer and tokenizer are the same for the forward & generate tests
-        config, weights = read_checkpoint("../stories15M.bin")
+        config, weights = read_checkpoint("../bin/stories15M.bin")
         transformer = Transformer(config, weights)
-        tokenizer = build_tokenizer("../tokenizer.bin", Int(config.vocab_size))
-
         @testset "forward test" begin
             @testset "forward with token=2 (empty string token) and pos=1" begin
                 # This test uses the run.c file from https://github.com/karpathy/llama2.c/blob/master/run.c
@@ -70,7 +68,7 @@ using DelimitedFiles
                 token = 2
                 pos = 1
                 forward!(transformer, state, token, pos)
-                expected_logits = readdlm("../empty_prompt_logits_first_iteration.csv", Float32)
+                expected_logits = readdlm("resources/empty_prompt_logits_first_iteration.csv", Float32)
                 @test maximum(abs.(state.logits - expected_logits)) < 1e-4
             end
         end
@@ -82,6 +80,7 @@ using DelimitedFiles
                 # ./run stories15M.bin -n 22 -t 0.0 -i "The universe"
                 # was used for execution of the run.c file, -t 0.0 enables argmax sampling which is deterministic and therefore can be used for comparison
                 # capture the output of the generate function and compare it with the expected output coming from the run.c file execution
+                tokenizer = build_tokenizer("../bin/tokenizer.bin", Int(config.vocab_size))
                 sampler = Sampler(Int(config.vocab_size), 0.0f0, 0.9f0)
                 expected_output = "The universe was bright and full of stars. Every night, the stars would twinkle and shine.\n"
                 

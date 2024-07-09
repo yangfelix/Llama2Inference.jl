@@ -106,9 +106,9 @@ The output is a logits vector of size `transformer.config.vocab_size`.
 
 # Example
 ```julia-repl
-julia> config, weights = read_checkpoint("./stories15M.bin")
+julia> config, weights = read_checkpoint("./bin/stories15M.bin")
 julia> transformer = Transformer(config, weights)
-julia> tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
+julia> tokenizer = build_tokenizer("./bin/tokenizer.bin", Int(config.vocab_size))
 julia> state = RunState(config)
 julia> token = 2
 julia> pos = 1
@@ -248,9 +248,9 @@ Generate a sequence of tokens using the `transformer`.
 
 # Example
 ```julia-repl
-julia> config, weights = read_checkpoint("./stories15M.bin")
+julia> config, weights = read_checkpoint("./bin/stories15M.bin")
 julia> transformer = Transformer(config, weights)
-julia> tokenizer = build_tokenizer("./tokenizer.bin", Int(config.vocab_size))
+julia> tokenizer = build_tokenizer("./bin/tokenizer.bin", Int(config.vocab_size))
 julia> sampler = Sampler(config.vocab_size, 0.0f0, 0.9f0)
 julia> generate(transformer, tokenizer, sampler, 23; prompt="The universe", performance=true)
 The universe was bright and full of stars. Every night, the stars would twinkle and shine.

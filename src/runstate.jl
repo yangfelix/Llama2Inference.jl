@@ -19,9 +19,9 @@ mutable struct RunState{T<:AbstractFloat}
 end
 
 """
-    RunState(config::Config)
+    RunState(config::Config; T::Type{<:AbstractFloat} = Float32)
 
-Create a RunState object with the given configuration.
+Create a RunState object with fields of type T (Float32 by default) from the given configuration.
 
 This is used to store the state of the model during inference and is 0-initialized.
 """
