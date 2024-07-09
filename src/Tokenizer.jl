@@ -99,10 +99,11 @@ function sort_vocab!(tokenizer::Tokenizer)
             str = tokenizer.vocab[i]
             if str in seen_strings
                 continue  # skip if we've already seen this string
+            
+            else    
+                push!(seen_strings, str)
+                push!(tokenizer.sorted_vocab, TokenIndex(str, i))
             end
-
-            push!(seen_strings, str)
-            push!(tokenizer.sorted_vocab, TokenIndex(str, i))
         end
 
         sort!(tokenizer.sorted_vocab, by = x -> x.str)
@@ -179,10 +180,6 @@ Decodes a token ID into its corresponding token string representation or byte va
 function decode(tokenizer::Tokenizer, prev_token::Int,token::Int)
     BOS = 2
     token_str = find_token_str(tokenizer,token)
-
-    if token_str == "<0x0A>"
-        token_str = "\n"
-    end
    
     # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
     if prev_token == BOS && token_str[1] == ' '
@@ -191,17 +188,34 @@ function decode(tokenizer::Tokenizer, prev_token::Int,token::Int)
     
     # check for raw bytes tokens
     if startswith(token_str, "<") && endswith(token_str, ">")
-        # remove '<' and '>' to gethexadecimal format 
-        hex_str = token_str[3:end-1]  # example for me "<0x01>" will be "x01"
+        # remove '<' and '>' and prefix
+        hex_str = token_str[4:end-1]  # example for me "<0x01>" will be "01"
         
         # Parse the hexadecimal string into a UInt8 byte
         byte_val = parse(UInt8, hex_str, base=16)
-        
-        return byte_val
+        return string(Char(byte_val))
     else
         return token_str
     end
 
+end
+
+"""
+
+    is_ascii_string(s::String) -> Bool
+
+Check if all characters in the given string are ASCII characters.
+
+# Arguments
+- `s::String`: The input string to be checked.
+
+# Returns
+- `Bool`: Returns `true` if all characters in the string are ASCII characters, otherwise returns `false`.
+
+# Examples
+"""
+function is_ascii_string(s::String)
+    return all(isascii, s)
 end
 
 """
@@ -230,31 +244,56 @@ Encodes the input text into a sequence of token IDs using the provided `Tokenize
 9. Returns the vector `tokens_indices` representing the encoded input text.
 """
 function encode(tokenizer::Tokenizer, text::String, use_bos::Bool, use_eos::Bool)
-    
-    sort_vocab!(tokenizer)   # Ensure tokenizer's vocabulary is sorted
-    text_bytes = StringEncodings.encode(text, "utf-8")  # Convert text to bytes
+    sort_vocab!(tokenizer)  # ensure tokenizer's vocabulary is sorted
 
+    text_bytes = StringEncodings.encode(text, "utf-8")  # convert text to bytes
     tokens_indices = Vector{Int}()
-
+   
     if use_bos
-        push!(tokens_indices, 2)
+        push!(tokens_indices, 2)  
     end
-    # Handle whitespace token if text is non-empty
+
+    # handle whitespace token if text is non-empty
     if text != ""
         token_str = " "
         token_id = find_token_id(tokenizer, token_str)
         push!(tokens_indices, token_id)
+        
     end
 
     # Lookup each byte token in the tokenizer's vocabulary and store its ID
-    for token in text_bytes
-        token_str = String([token])
+    i = 1
+    while i <= length(text_bytes)
+        byte = text_bytes[i]
+        token_str = String([byte])
+        # if the byte is not ascii, concatenate
+        if !is_ascii_string(token_str) && i + 1 <= length(text_bytes)
+            byte = text_bytes[i+1]
+            next_byte = String([byte])
+            i += 1
+
+            while !is_ascii_string(next_byte) && i <= length(text_bytes)
+                byte = text_bytes[i]
+                next_byte = String([byte])
+                
+                if !is_ascii_string(next_byte)
+                    token_str = token_str * String([byte])  
+                    i += 1
+                else
+                    break
+                end
+            end  
+        else
+            i += 1
+        end
+
+       
         token_id = find_token_id(tokenizer, token_str)
         if token_id != -1
             push!(tokens_indices, token_id)
         else
-            # Handle unknown tokens
-            push!(tokens_indices, -1)  # Use -1 for unknown tokens
+            # handle unknown tokens
+            push!(tokens_indices, Int(byte) + 4)  # 10 for \n will be 14
         end
     end
 
@@ -265,14 +304,12 @@ function encode(tokenizer::Tokenizer, text::String, use_bos::Bool, use_eos::Bool
         best_score = -1e10
         best_id = -1
         best_idx = -1
-        merged_str = ""
 
         for i in 1:(n_tokens - 1)
             token1 = tokens_indices[i]
-            token2 = tokens_indices[i+1]
+            token2 = tokens_indices[i + 1]
             
             merged_str = tokenizer.vocab[token1] * tokenizer.vocab[token2]
-
             merged_token_id = find_token_id(tokenizer, merged_str)
 
             # Check if new merged token exists and its score is better than the current one
@@ -297,8 +334,9 @@ function encode(tokenizer::Tokenizer, text::String, use_bos::Bool, use_eos::Bool
 
     # Optionally add EOS token
     if use_eos
-        push!(tokens_indices, 3)
+        push!(tokens_indices,3 )  
     end
 
     return tokens_indices
 end
+
