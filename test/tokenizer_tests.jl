@@ -34,9 +34,4 @@ using Llama2Inference
     expected_tokens4 .+= 1 
 
     @test encode(tokenizer, prompt4, BOS, EOS) == expected_tokens4
-
-
-
-
-
 end
