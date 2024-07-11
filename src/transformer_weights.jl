@@ -26,30 +26,31 @@ to store both the configuration and weights of the transformer used and read the
 [`read_checkpoint`](@ref).
 """
 struct TransformerWeights{T<:AbstractFloat}
+    # Note: In comparison to the dimensions in the original run.c from Karpathy,
+    # the dimensions are transposed to increase performance by making use of the column-major order of Julia
+
     # token embedding table
-    token_embedding_table::AbstractArray{T,2} # (vocab_size, dim)
+    token_embedding_table::AbstractArray{T,2} # (dim, vocab_size)
     # weights for rmsnorms att
-    rms_att_weight::AbstractArray{T,2} # (layer, dim) 
+    rms_att_weight::AbstractArray{T,2} # (dim, layer) 
     # weights for matmuls.
     # Note:
     #   dim == n_heads * head_size
     #   kv_dim == n_kv_heads * head_size
-    wq::AbstractArray{T,3} # (layer, dim, dim)
-    # corresponding to matmul function call in line 146,
-    # the dimensionality in the comment of run.c is wrong, the last 2 dimensions got swapped
-    wk::AbstractArray{T,3} # (layer, kv_dim, dim) 
-    wv::AbstractArray{T,3} # (layer, kv_dim, dim)
-    wo::AbstractArray{T,3} # (layer, dim, dim)
+    wq::AbstractArray{T,3} # (dim, dim, layer)
+    wk::AbstractArray{T,3} # (dim, kv_dim, layer) 
+    wv::AbstractArray{T,3} # (dim, kv_dim, layer)
+    wo::AbstractArray{T,3} # (dim, dim, layer)
     # weights for rmsnorms ffn
-    rms_ffn_weight::AbstractArray{T,2} # (layer, dim)
+    rms_ffn_weight::AbstractArray{T,2} # (dim, layer)
     # weights for ffn
-    w1::AbstractArray{T,3} # (layer, hidden_dim, dim)
-    w2::AbstractArray{T,3} # (layer, dim, hidden_dim)
-    w3::AbstractArray{T,3} # (layer, hidden_dim, dim)
+    w1::AbstractArray{T,3} # (dim, hidden_dim, layer)
+    w2::AbstractArray{T,3} # (hidden_dim, dim, layer)
+    w3::AbstractArray{T,3} # (dim, hidden_dim, layer)
     # final rmsnorm
     rms_final_weight::AbstractArray{T,1} # (dim,)
     # (optinoal) classifier weights for the logits, on the last layer
-    wcls::AbstractArray{T,2} # (vocab_size, dim)
+    wcls::AbstractArray{T,2} # (dim, vocab_size)
     function TransformerWeights{T}(
         token_embedding_table::AbstractArray{T,2},
         rms_att_weight::AbstractArray{T,2},
