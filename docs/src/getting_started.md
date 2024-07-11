@@ -42,4 +42,4 @@ generate(transformer, tokenizer, sampler, 256; prompt="The universe")
 ```
 
 !!! note
-    The `temperature` and `topp` argument of the [`Sampler`](@ref) control the random factor of the sampled tokens at each timestep and therefore directly control the diversity generated stories with the same setup.
+    The `temperature` and `topp` argument of the [`Sampler`](@ref) control the random factor of the sampled tokens at each timestep and therefore directly control the diversity of the generated stories.

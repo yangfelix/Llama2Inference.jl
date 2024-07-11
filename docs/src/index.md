@@ -12,5 +12,4 @@ Modules = [Llama2Inference]
 
 ```@autodocs
 Modules = [Llama2Inference]
-Pages = ["transformer.jl", "Tokenizer.jl", "sampler.jl", "config.jl", "transformer_weights.jl", "runstate.jl"]
 ```
