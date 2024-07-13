@@ -28,7 +28,7 @@ struct Tokenizer
     vocab::Vector{String}
     vocab_scores::Vector{Float32}
     max_token_length::Int
-    sorted_vocab::Union{Nothing, Vector{TokenIndex}}   # can be either nothing or vector of tokens and their indices
+    sorted_vocab::Union{Nothing, Vector{TokenIndex}}  
     
 end
 
@@ -92,13 +92,13 @@ Sorts the vocabulary of the given `Tokenizer`, storing unique tokens and sorting
 function sort_vocab!(tokenizer::Tokenizer)
    
     if isnothing(tokenizer.sorted_vocab) || isempty(tokenizer.sorted_vocab)
-        #tokenizer.sorted_vocab = Vector{TokenIndex}()
+    
         seen_strings = Set{String}()
 
         for i in 1:tokenizer.vocab_size
             str = tokenizer.vocab[i]
             if str in seen_strings
-                continue  # skip if we've already seen this string
+                continue 
             
             else    
                 push!(seen_strings, str)
@@ -181,17 +181,15 @@ function decode(tokenizer::Tokenizer, prev_token::Int,token::Int)
     BOS = 2
     token_str = find_token_str(tokenizer,token)
    
-    # following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
     if prev_token == BOS && token_str[1] == ' '
-        token_str = token_str[2:end]   # example for me "text" -> "ext"
+        token_str = token_str[2:end]  
     end
     
     # check for raw bytes tokens
     if startswith(token_str, "<") && endswith(token_str, ">")
         # remove '<' and '>' and prefix
-        hex_str = token_str[4:end-1]  # example for me "<0x01>" will be "01"
+        hex_str = token_str[4:end-1] 
         
-        # Parse the hexadecimal string into a UInt8 byte
         byte_val = parse(UInt8, hex_str, base=16)
         return string(Char(byte_val))
     else
@@ -293,7 +291,7 @@ function encode(tokenizer::Tokenizer, text::String, use_bos::Bool, use_eos::Bool
             push!(tokens_indices, token_id)
         else
             # handle unknown tokens
-            push!(tokens_indices, Int(byte) + 4)  # 10 for \n will be 14
+            push!(tokens_indices, Int(byte) + 4)  
         end
     end
 
@@ -332,7 +330,6 @@ function encode(tokenizer::Tokenizer, text::String, use_bos::Bool, use_eos::Bool
         n_tokens -= 1  # Update the number of tokens after merge
     end
 
-    # Optionally add EOS token
     if use_eos
         push!(tokens_indices,3 )  
     end
