@@ -8,7 +8,7 @@
 This repository holds a Julia module called `Llama2Inference` and was created as part of course work at [TU Berlin](https://www.tu.berlin/).
 
 <p align="center">
-  <img src="assets/llama_julia.png" width="500" height="500" alt="Cute Llama">
+  <img src="assets/llama_julia.png" width="300" height="300" alt="Cute Llama">
 </p>
 
 
