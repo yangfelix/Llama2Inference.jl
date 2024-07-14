@@ -43,3 +43,9 @@ generate(transformer, tokenizer, sampler, 256; prompt="The universe")
 
 !!! note
     The `temperature` and `topp` argument of the [`Sampler`](@ref) control the random factor of the sampled tokens at each timestep and therefore directly control the diversity of the generated stories.
+
+!!! note
+    You can download other weights for more complex models pre-trained by Karpathy [here](https://huggingface.co/karpathy/tinyllamas/tree/main).
+    These are not included in this repository to keep the required space lower.
+
+    The above examples work by only changing the path in `read_checkpoint(path)` to the desired weights file.
