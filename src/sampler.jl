@@ -18,17 +18,19 @@ mutable struct Sampler
 end
 
 """
-    Sampler(vocab_size::Int, temperature::Float32, topp::Float32)
+    Sampler(vocab_size::T, temperature::T, topp::T) where {T <: Signed, Z <: AbstractFloat}
 
 Create a sampler object with the given parameters, used for sampling from a distribution.
 
 # Arguments
-- `vocab_size::Int`: The size of the vocabulary.
-- `temperature::Float32`: The temperature to apply to the logits before sampling.
-- `topp::Float32`: The probability mass to sample from the top-p distribution.
+- `vocab_size::T`: The size of the vocabulary, will be casted to `Int32`.
+- `temperature::T`: The temperature to apply to the logits before sampling, will be casted to `Float32`.
+- `topp::T`: The probability mass to sample from the top-p distribution, will be casted to `Float32`.
 """
-function Sampler(vocab_size::Int, temperature::Float32, topp::Float32)
+function Sampler(vocab_size::T, temperature::Z, topp::Z) where {T <: Signed, Z <: AbstractFloat}
     vocab_size = Int32(vocab_size)
+    temperature = Float32(temperature)
+    topp = Float32(topp)
     return Sampler(vocab_size, temperature, topp)
 end
 
@@ -83,9 +85,12 @@ end
 
 Sample from the `logits` using the `sampler`.
 
+When `sampler.temperature` is 0, this function returns the index of the maximum value in `logits`.
+When `sampler.temperature` is not 0, this function first applies the temperature to the logits, then the softmax function and samples from this distribution using the `topp` parameter.
+
 # Example
 ```julia-repl
-julia> sampler = Sampler(6, 0.0f0, 0.0f0)
+julia> sampler = Sampler(6, 0.0, 0.0)
 julia> logits = [0.1f0, 0.3f0, 0.2f0, 0.15f0, 0.15f0, 0.1f0]
 julia> sample(sampler, logits)
 2
