@@ -85,8 +85,12 @@ end
 
 Sample from the `logits` using the `sampler`.
 
-When `sampler.temperature` is 0, this function returns the index of the maximum value in `logits`.
-When `sampler.temperature` is not 0, this function first applies the temperature to the logits, then the softmax function and samples from this distribution using the `topp` parameter.
+When `temperature` is 0, this function returns the index of the maximum value in `logits`.
+
+When `temperature` is not 0 the following approach is used:
+1. Apply the temperature to the logits.
+2. Apply softmax to the logits to get a probability distribution.
+3. IF 0 < `topp` < 1 THEN use top-p (\"nucleus\") sampling ELSE sample from the full distribution.
 
 # Example
 ```julia-repl
