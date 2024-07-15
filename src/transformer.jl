@@ -29,6 +29,24 @@ function read_checkpoint(checkpoint::String, T_weights::Type=Float32, T_config::
 end
 
 """
+    safe_print(piece::String)
+
+Prints the string `piece` to the console, skipping any "unsafe" bytes.
+"""
+function safe_print(piece::String)
+    if piece[1] == '\0'
+        return
+    end
+    if length(piece) > 1
+        byte_val::Char = piece[1]
+        if !(isprint(byte_val) || isspace(byte_val))
+            return
+        end
+    end
+    print(piece)
+end
+
+"""
     rmsnorm!(out::AbstractArray{Float32, 1}, x::AbstractArray{Float32,1}, weight::AbstractArray{Float32,1})
 
 Normalize `out` in place by the root mean square of `x` and multiply with `weight`.
@@ -62,19 +80,6 @@ function softmax!(x::AbstractArray{T,1}) where {T<:AbstractFloat}
     @. x = exp(x)
     # normalize the values
     @. x /= $sum(x)
-end
-
-function safe_print(piece::String)
-    if piece[1] == '\0'
-        return
-    end
-    if length(piece) > 1
-        byte_val::Char = piece[1]
-        if !(isprint(byte_val) || isspace(byte_val))
-            return
-        end
-    end
-    print(piece)
 end
 
 """
