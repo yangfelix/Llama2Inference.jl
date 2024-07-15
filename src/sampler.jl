@@ -18,16 +18,16 @@ mutable struct Sampler
 end
 
 """
-    Sampler(vocab_size::T, temperature::T, topp::T) where {T <: Signed, Z <: AbstractFloat}
+    Sampler(vocab_size::T, temperature::Z, topp::Z) where {T<:Signed, Z<:AbstractFloat}
 
 Create a sampler object with the given parameters, used for sampling from a distribution.
 
 # Arguments
 - `vocab_size::T`: The size of the vocabulary, will be casted to `Int32`.
-- `temperature::T`: The temperature to apply to the logits before sampling, will be casted to `Float32`.
-- `topp::T`: The probability mass to sample from the top-p distribution, will be casted to `Float32`.
+- `temperature::Z`: The temperature to apply to the logits before sampling, will be casted to `Float32`.
+- `topp::Z`: The probability mass to sample from the top-p distribution, will be casted to `Float32`.
 """
-function Sampler(vocab_size::T, temperature::Z, topp::Z) where {T <: Signed, Z <: AbstractFloat}
+function Sampler(vocab_size::T, temperature::Z, topp::Z) where {T<:Signed, Z<:AbstractFloat}
     vocab_size = Int32(vocab_size)
     temperature = Float32(temperature)
     topp = Float32(topp)
