@@ -4,7 +4,7 @@ using DataStructures
 using Mmap: mmap
 using LinearAlgebra: dot
 
-include("Tokenizer.jl")
+include("tokenizer.jl")
 include("config.jl")
 include("runstate.jl")
 include("transformer_weights.jl")
